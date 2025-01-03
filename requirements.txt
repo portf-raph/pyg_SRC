@@ -1,0 +1,5 @@
+--find-links https://data.pyg.org/whl/torch-2.5.1+cu124.html
+torch==2.5.1+cu124
+git+https://github.com/pyg-team/pytorch_geometric.git
+torch-scatter
+torch-sparse
