@@ -39,7 +39,7 @@ def scode_obj(
         _f_stack: Tensor,
         _D_stack: Tensor,
         _lambda: float
-    ) -> tor:
+    ):
     regress = (1/2) * torch.sum(torch.square(_f_stack - _D_stack @ params))
     penalty = _lambda * torch.linalg.norm(params, ord=1)
     return regress + penalty
