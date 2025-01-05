@@ -7,12 +7,16 @@ from torch_geometric.data import Batch, Data
 
 
 def get_eigs(adj: Tensor):
-    if adj.device == 'cuda':  # TODO: return type hint
+    if adj.device == 'cuda':
         eigs, V = cp.linalg.eigh(cp.asarray(adj.to('cuda')))
         eigs, V = cp.squeeze(eigs), cp.squeeze(V)
+        eigs = torch.Tensor(eigs)
+        V = torch.Tensor(V)
     else:
         eigs, V = np.linalg.eigh(adj.detach().cpu().numpy())
         eigs, V = np.squeeze(eigs), np.squeeze(V)
+        eigs = torch.from_numpy(eigs)
+        V = torch.from_numpy(V)
     return eigs, V
 
 
