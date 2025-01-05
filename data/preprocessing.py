@@ -16,11 +16,9 @@ def dump_eigs_data(
               tag: str,
               dataset: Dataset,
               ):
+
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
-
-    if not os.path.exists(save_dir + '/pkl'):
-        os.mkdir(save_dir + '/pkl')
 
     log_file = os.path.join(save_dir, 'log_{}.txt'.format(ds_name))
     logger = logging.getLogger(__name__)
@@ -37,7 +35,7 @@ def dump_eigs_data(
 
         dense_adj = to_dense_adj(edge_index=data.edge_index,
                                  edge_attr=data.edge_attr)
-        eigs, V = get_eigs(dense_adj)    # mod call
+        eigs, V = get_eigs(dense_adj)    
         if count == 0:
             logger.info('STORAGE: {}'.format(data.edge_index.device))
         data_dict['eigs'] = eigs
@@ -47,10 +45,10 @@ def dump_eigs_data(
         if V is None:
             logger.info('V is None @ count {}'.format(count))
 
-        pickle.dump(
+        torch.save(
         data_dict,
         open(
-            os.path.join(save_dir, 'pkl/{}_{}_{:07d}.p'.format(ds_name, tag, count)),
+            os.path.join(save_dir, '{}_{}_{:05d}.pth'.format(ds_name, tag, count)),
             'wb'))
 
         count += 1
@@ -61,9 +59,9 @@ def dump_eigs_data(
 def main():
     # 1.  Parser
     parser = argparse.ArgumentParser(
-        description="Preprocessing data, getting pkl file"
+        description="Preprocessing data, getting pth file"
     )
-    parser.add_argument('--save_dir', type=str, default='../data',
+    parser.add_argument('--save_root', type=str, default='../data',
                         required=True, help='Script config file path')
     parser.add_argument('--ds_name', type=str, default='PROTEINS',
                         required=True, help='Name of TUDataset')
@@ -73,12 +71,14 @@ def main():
     args = parser.parse_args()
 
     # 2. Pickel dump
-    dataset = TUDataset(root='../data', name=args.ds_name)
+    save_dir = os.path.join(args.save_root, args.ds_name, 'pth')
+    dataset = TUDataset(root=args.save_root, name=args.ds_name)
     dump_eigs_data(
-        save_dir=args.save_dir,
+        save_dir=save_dir,
         ds_name = args.ds_name,
         tag = args.tag,
-        dataset=dataset)
+        dataset=dataset
+        )
 
 if __name__ == '__main__':
     main()
