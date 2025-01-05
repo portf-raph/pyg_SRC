@@ -11,7 +11,6 @@ class GIN_Processor(torch.nn.Module):
     def __init__(self,
                  in_channels: int,
                  hidden_channels: int,
-                 out_channels: int,   # GINConv
                  num_layers: int,
                  MLP_cfg: dict,
                  skip_first_features: bool=False,
@@ -28,14 +27,15 @@ class GIN_Processor(torch.nn.Module):
             else:
                 local_in_channels = MLP_cfg['hid_dim']    # TODO: validate
             MLP_ = MLP(in_dim=local_in_channels,
-                      out_dim=MLP_cfg['out_dim'],
+                      out_dim=MLP_cfg['hid_dim'],
                       hid_dim=MLP_cfg['hid_dim'],
                       num_hid=MLP_cfg['num_hid'],
                       dp_cfg=MLP_cfg['dp_cfg'],
                       bn_cfg=MLP_cfg['bn_cfg'],
-                      output_activation='relu', device=device)
+                      output_activation='relu', device=device)  # mod call
             GIN_layer = GINConv(MLP_, eps=0., train_eps=False).to(device)
             self.convs.append(GIN_layer)
+        self.out_channels = num_layers * MLP_cfg['hid_dim']
 
     def forward(self, x, edge_index):
 
@@ -52,9 +52,3 @@ class GIN_Processor(torch.nn.Module):
 
         x = torch.cat(x_cat, dim=1)
         return x
-
-    def save(self, path):
-        torch.save(self.state_dict(), path)
-
-    def load(self, path):
-        self.load_state_dict(torch.load(path))

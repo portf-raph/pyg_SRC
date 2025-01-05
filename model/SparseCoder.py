@@ -7,11 +7,12 @@ from utils.dict_learning import get_dict, scode_obj, FISTA
 class SparseCoder(torch.nn.Module):
     def __init__(self,
                  K: int,
-                 in_channels: int,  # C
-                 num_atoms: int,  # M
+                 in_channels: int,
+                 num_atoms: int,
                  num_classes: int,
                  _lambda: float,
                  partition: list[int],
+                 device='cpu'
                  ):
 
         super().__init__()
@@ -23,12 +24,12 @@ class SparseCoder(torch.nn.Module):
         self._lambda = _lambda
 
         # Parameter A
-        self.A = Parameter(torch.randn(self.K, self.in_channels*self.num_atoms))   # TODO: A init
+        self.A = Parameter(torch.randn(self.K, self.in_channels*self.num_atoms)).to(device)   # TODO: A init
 
         # Selection operators
         assert self.partition[0] == 0
         assert self.partition[-1] == num_atoms + 1
-        assert self.num_classes + 2 == len(self.partition)  # TODO: Validate
+        assert self.num_classes + 2 == len(self.partition)
         self.Q = torch.eye(self.num_atoms)
 
     def forward(self,
@@ -39,7 +40,7 @@ class SparseCoder(torch.nn.Module):
             edge_attr = data_dict['edge_attr']
             x = data_dict['x']    # now GIN output
             y = data_dict['y']
-            eigs = atol_eigs(data_dict['eigs'], edge_index)   # mod call
+            eigs = atol_eigs(data_dict['eigs'], edge_index)
             V = torch.from_numpy(data_dict['V'])
 
             D = get_dict(A=self.A,
@@ -65,9 +66,3 @@ class SparseCoder(torch.nn.Module):
             _r_batch.append(_r)
 
         return _r_batch
-
-    def save(self, path):
-        torch.save(self.state_dict(), path)
-
-    def load(self, path):
-        self.load_state_dict(torch.load(path))
