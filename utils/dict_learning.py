@@ -1,4 +1,3 @@
-# utils/dict_learning.py
 import torch
 from torch import Tensor
 import torch.nn.functional as F
@@ -29,27 +28,27 @@ def get_dict(A: Tensor,
     D = D.split(num_nodes * in_channels, dim=0)
     D = torch.stack(D, dim=0)
     D = D.t()
-    D = F.normalize(D,p=2,dim=0)
+    print(D)
+    D = F.normalize(D,p=2, dim=0, eps=1e-12)
 
     return D
 
 
-def scode_obj(
-        params: Tensor,
-        _f_stack: Tensor,
-        _D_stack: Tensor,
-        _lambda: float
-    ):
+def scode_obj(params: Tensor,
+                _f_stack: Tensor,
+                _D_stack: Tensor,
+                _lambda: float
+                ):
     regress = (1/2) * torch.sum(torch.square(_f_stack - _D_stack @ params))
     penalty = _lambda * torch.linalg.norm(params, ord=1)
     return regress + penalty
 
 
 def FISTA(
-    _f_stack: Tensor,
-    _D_stack: Tensor,
+    _f_stack: torch.Tensor,
+    _D_stack: torch.Tensor,
     _lambda: float
-    ) -> Tensor:
+) -> torch.Tensor:
 
     c = PowerMethod(_D_stack)
     eta = 1 / c

@@ -16,12 +16,14 @@ def test_get_dict(K):
     eigs = torch.randn(5)
 
     st = time.time()
-    D = get_dict(A=A, V=V, eigs=eigs, K=K, in_channels=C)   # mod call
+    D = get_dict(A=A, V=V, eigs=eigs, K=K, in_channels=C)
     et = time.time()
 
     assert D.shape[0] == 5*C, print('Wrong row shape')
     assert D.shape[1] == M, print('Wrong column shape')
-    assert torch.norm(D[:,0]) == 1, print('Normalization failed')
+    assert torch.isclose(
+        torch.norm(D[:,0], 2), torch.Tensor([1]), atol=1e-08
+        ), print('Normalization failed')
 
     print('{}s elapsed'.format(et-st))
     return 0
@@ -37,7 +39,7 @@ def test_FISTA():
                         torch.Tensor([1,0,1]),
                         torch.zeros(24)])
     _f_stack = _D_stack @ _r_syn
-    params = FISTA(_f_stack=_f_stack, _D_stack=_D_stack, _lambda=_lambda)   # mod call
+    params = FISTA(_f_stack=_f_stack, _D_stack=_D_stack, _lambda=_lambda)
     grad = torch.func.grad(scode_obj, argnums=0)(params, _f_stack, _D_stack, _lambda)
     assert torch.allclose(params, _r_syn, atol=1e-2)
     assert torch.allclose(grad, torch.zeros(30), atol=5e-2)
