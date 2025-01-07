@@ -28,7 +28,6 @@ def get_dict(A: Tensor,
     D = D.split(num_nodes * in_channels, dim=0)
     D = torch.stack(D, dim=0)
     D = D.t()
-    print(D)
     D = F.normalize(D,p=2, dim=0, eps=1e-12)
 
     return D

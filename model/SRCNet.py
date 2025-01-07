@@ -4,6 +4,7 @@ from model.SparseCoder import SparseCoder
 
 import torch
 
+
 class SRCNet(torch.nn.Module):
     def __init__(self,
                  GIN_cfg: dict,
@@ -17,8 +18,9 @@ class SRCNet(torch.nn.Module):
         self.SC = SparseCoder(**SC_cfg,
                        in_channels=self.GIN.out_channels,
                        device=device)
-        self.OUT = MLP(in_dim=SC_cfg['num_atoms'],
-                       **OUT_cfg,
+        self.OUT = MLP(**OUT_cfg,
+                       in_dim=self.SC.num_atoms,
+                       out_dim=self.SC.num_classes,
                        device=device)
 
     def forward(self,
