@@ -34,7 +34,7 @@ class MLP(torch.nn.Module):
                 else:
                     self.bn_layers.append(torch.nn.Identity())
 
-            self.layers.append(torch.nn.Linear(hid_dim, out_dim))
+            self.layers.append(torch.nn.Linear(hid_dim, out_dim, device=device))
             self.dp_layers.append(torch.nn.Dropout(dp_cfg['dropout']))
 
         self.activation = torch.nn.functional.relu

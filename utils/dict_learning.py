@@ -7,7 +7,7 @@ import torchopt
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def get_dict(A: Tensor,
+def get_dict(A: Tensor, 
              V: Tensor,
              eigs: Tensor,
              K: int,
@@ -64,14 +64,14 @@ def FISTA(
 
         t_1 = t
         t = (1 + np.sqrt(1 + 4 * t**2)) / 2
-        Z = params + ((t_1 - 1) / t * (params - _r_1)).to(_f_stack.device)
+        Z = params + ((t_1 - 1) / t * (params - _r_1)).to(device)
 
     return params
 
 
 def PowerMethod(_D_stack):
     ITER = 100
-    r = torch.randn(_D_stack.shape[1]).to(device)
+    r = torch.randn(_D_stack.shape[1], device=device)
     for i in range(ITER):
         Dr = _D_stack @ r
         r = _D_stack.T @ Dr
