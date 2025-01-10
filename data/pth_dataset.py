@@ -5,10 +5,8 @@ from torch.utils.data import Dataset
 
 class PthDataset(Dataset):
     def __init__(self,
-                 load_dir: str,
-                 device: str):
+                 load_dir: str):   # e.g. ../data_test/PROTEINS/pth
         super().__init__()
-        self.device = device
         self.load_dir = load_dir
         self.file_list = os.listdir(load_dir)
 
