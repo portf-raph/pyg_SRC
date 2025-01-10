@@ -17,10 +17,7 @@ from utils.train_helper import *
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO,
-                    filename='/exp/{}-log.txt'.format(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')),
-                    filemode='a'
-                    )
+
 
 class PYGRunner(object):
     def __init__(
