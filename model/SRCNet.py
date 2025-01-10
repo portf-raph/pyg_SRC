@@ -5,6 +5,8 @@ from model.SparseCoder import SparseCoder
 import torch
 
 
+import torch
+
 class SRCNet(torch.nn.Module):
     def __init__(self,
                  GIN_cfg: dict,
@@ -13,8 +15,9 @@ class SRCNet(torch.nn.Module):
                  device='cpu'
                  ):
         super().__init__()
+        self.device = device
         self.GIN = GIN_Processor(**GIN_cfg,
-                                 device=device)   # mod call
+                                 device=device)
         self.SC = SparseCoder(**SC_cfg,
                        in_channels=self.GIN.out_channels,
                        device=device)
