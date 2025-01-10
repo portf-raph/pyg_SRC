@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pickle
+import datetime
 from collections import defaultdict
 from tqdm import tqdm
 
@@ -15,8 +16,11 @@ import logging
 from utils.train_helper import *
 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO,
+                    filename='/exp/{}-log.txt'.format(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')),
+                    filemode='a'
+                    )
 
 class PYGRunner(object):
     def __init__(
@@ -37,8 +41,8 @@ class PYGRunner(object):
         self.use_gpu = script_cfg['use_gpu']
         self.gpus = script_cfg['gpus']
 
-        self.model = model_object`
-        self.train_dataset = train_dataset    # all PthDataset objects
+        self.model = model_object
+        self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
         self.test_dataset = test_dataset
 
@@ -72,7 +76,7 @@ class PYGRunner(object):
 
         if self.train_cfg['optimizer'] == 'SGD':
             optimizer = optim.SGD([
-                {'params': params, 
+                {'params': params,
                 'lr': self.train_cfg['lr'],
                 'momentum': self.train_cfg['momentum'],
                 'weight_decay': self.train_cfg['wd']},
@@ -104,7 +108,7 @@ class PYGRunner(object):
         # reset gradient
         optimizer.zero_grad()
         if self.train_cfg['is_resume']:
-            load_model(self.model, self.train_cfg['resume_model'], optimizer=optimizer)   # mod call
+            load_model(self.model, self.train_cfg['resume_model'], optimizer=optimizer) 
 
         # training loop
         iter_count = 0
@@ -122,18 +126,18 @@ class PYGRunner(object):
                     if self.use_gpu:
                         data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                         else v for k, v in d.items()} for d in data_dicts]
-                    y = torch.Tensor([d['y'].item() for d in data_dicts])
+                    y = torch.LongTensor([d['y'].item() for d in data_dicts]) 
                     with torch.no_grad():
-                        out = model(data_dicts)    # FORWARD
+                        out = model(data_dicts) 
                         curr_loss = F.cross_entropy(out, y).cpu().numpy()
-                        val_loss += [curr_loss]    # appending
+                        val_loss += [curr_loss]
                         pred = out.max(dim=1)[1]
                         correct += pred.eq(y).sum().item()
 
                 # TODO: add dictionary-related metrics
                 val_acc = correct / len(dev_loader.dataset)
-                val_loss = float(np.mean(val_loss))   # no concat (mod)
-                print("Avg. Validation CrossEntropy = {}".format(val_loss))     # dbg
+                val_loss = float(np.mean(val_loss))
+                print("Avg. Validation CrossEntropy = {}".format(val_loss)) 
                 print("Avg. Validation Accuracy = {}".format(val_acc))
                 results['val_loss'] += [val_loss]
 
@@ -149,7 +153,7 @@ class PYGRunner(object):
 
                 logger.info("Current Best Validation CrossEntropy = {}".format(best_val_loss))
 
-                # check early stop
+                # early stop
                 if early_stop.tick([val_acc]):
                   print("STOPPING TIME DUE NOW")
                   snapshot(
@@ -163,26 +167,30 @@ class PYGRunner(object):
             # training
             model.train()
             lr_scheduler.step()
-            for data in train_loader:
+            params = list(params)
+            for data_dicts in train_loader:
                 optimizer.zero_grad()
                 if self.use_gpu:
                     data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                     else v for k, v in d.items()} for d in data_dicts]
-                y = torch.Tensor([d['y'].item() for d in data_dicts])
-                out = model(data_dicts) # FORWARD
-                self.model.SC.A_loss.backward()
+                y = torch.LongTensor([d['y'].item() for d in data_dicts]) 
+                out = model(data_dicts)
+
+                self.model.SC.A_loss.backward(retain_graph=True)  
                 train_loss = F.cross_entropy(out, y)
-                train_loss.backward() # BACKWARD
-                
+                torch.autograd.backward(
+                            train_loss,
+                            inputs=params)    
+
                 optimizer.step()
                 train_loss = float(train_loss.data.cpu().numpy())
                 results['train_loss'] += [train_loss]
                 results['train_step'] += [iter_count]
-                epoch_loss += [train_loss]
+                epoch_loss += train_loss
 
                 # display loss
                 if (iter_count + 1) % self.train_cfg['display_iter'] == 0:
-                    logger.info("Loss @ epoch {:04d} iteration {:08d} = {}".format(   # dbg
+                    logger.info("Loss @ epoch {:04d} iteration {:08d} = {}".format( 
                         epoch + 1, iter_count + 1, train_loss))
 
                 iter_count += 1
@@ -191,7 +199,7 @@ class PYGRunner(object):
                 snapshot(model.module
                          if self.use_gpu else model, optimizer, self.script_cfg, epoch + 1)
 
-            epoch_loss = float(np.mean(epoch_loss))
+            epoch_loss = epoch_loss / len(train_loader)
             print("Loss @ epoch {:04d} = {}".format(epoch+1, epoch_loss))
 
         results['best_val_loss'] += [best_val_loss]
@@ -219,11 +227,11 @@ class PYGRunner(object):
         model.eval()
         test_loss = []
 
-        for data_dicts in tqdm(dev_loader):
+        for data_dicts in tqdm(test_loader):
             if self.use_gpu:
                 data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                 else v for k, v in d.items()} for d in data_dicts]
-            y = torch.Tensor([d['y'].item() for d in data_dicts])
+            y = torch.LongTensor([d['y'].item() for d in data_dicts])
             with torch.no_grad():
                 out = model(data_dicts)
                 curr_loss = F.cross_entropy(out, y).cpu().numpy()
