@@ -7,7 +7,7 @@ from torch_geometric.data import Batch, Data
 
 
 def get_eigs(adj: Tensor):
-    if adj.device == 'cuda':
+    if adj.device == 'cuda':  # TODO: return type hint
         eigs, V = cp.linalg.eigh(cp.asarray(adj.to('cuda')))
         eigs, V = cp.squeeze(eigs), cp.squeeze(V)
         eigs = torch.Tensor(eigs)
@@ -22,7 +22,8 @@ def get_eigs(adj: Tensor):
 
 def atol_eigs(eigs, edge_index) -> Tensor:
     row = edge_index[0]
-    edge_weight = torch.ones(edge_index.shape[1]).to(edge_index.device)
+    device = edge_index.device
+    edge_weight = torch.ones(edge_index.shape[1], device=device)
 
     num_nodes = edge_index.max().item() + 1
     deg = scatter(edge_weight, row, 0, dim_size=num_nodes, reduce='sum')
@@ -30,7 +31,7 @@ def atol_eigs(eigs, edge_index) -> Tensor:
     deg_inv_sqrt = deg.pow(-0.5)
     deg_inv_sqrt.masked_fill_(deg_inv_sqrt == float('inf'), 0)
 
-    return torch.ones(eigs.shape[0]) - deg_inv_sqrt * eigs * deg_inv_sqrt
+    return torch.ones(eigs.shape[0], device=device) - deg_inv_sqrt * eigs * deg_inv_sqrt
 
 
 def pyg_batch(data_dicts: list[dict]) -> Batch:
