@@ -5,8 +5,6 @@ from model.SparseCoder import SparseCoder
 import torch
 
 
-import torch
-
 class SRCNet(torch.nn.Module):
     def __init__(self,
                  GIN_cfg: dict,

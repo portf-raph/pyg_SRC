@@ -1,7 +1,7 @@
 import torch
-from ...model.SRCNet import SRCNet
-
 from torch_geometric.datasets import TUDataset
+
+from ...model.SRCNet import SRCNet
 
 def test_SRCNet():
     if torch.cuda.is_available():
@@ -24,7 +24,7 @@ def test_SRCNet():
         'num_classes': 2,
         '_lambda': 0.2,
         '_eta': 0.3,
-        'backward': True,
+        'compute_loss': True,
         'partition': [0,10,20,30]
     }
     OUT_cfg = {
@@ -35,7 +35,6 @@ def test_SRCNet():
         'output_activation': 'linear'
     }
     model = SRCNet(GIN_cfg, SC_cfg, OUT_cfg, device=device)
-
     dataset = TUDataset(root='../data', name='PROTEINS')
     data_dicts = []
     for i in range(5):
@@ -55,8 +54,8 @@ def test_SRCNet():
 
         data_dicts.append(data_dict)
 
-    for params in model.parameters():
-        print('p shape:{}, p device: {}'.format(params.shape, params.device))
+    for p in model.parameters():
+        print('p shape:{}, p device: {}'.format(p.shape, p.device))
     params = filter(lambda p: p.requires_grad and p is not model.SC.A,
                         model.parameters())
     params = list(params)
@@ -74,21 +73,24 @@ def test_SRCNet():
 
     data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                     else v for k, v in d.items()} for d in data_dicts]
-    y = torch.LongTensor([d['y'].item() for d in data_dicts]).to(device)
+    y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)
     out = model(data_dicts)
 
-    for gp in list(model.GIN.parameters()):
-        print(gp.grad)
+    for p in list(model.GIN.parameters()):
+        print(p.grad)
     print('==== none ====')
     # backward
-    model.SC.A_loss.backward(retain_graph=True)
+    print(model.SC.A_fidelity)
+    print(model.SC.A_incoherence)
+    A_loss = model.SC.A_fidelity + model.SC._eta * model.SC.A_incoherence
+    print('A_loss: {}'.format(A_loss))
+    A_loss.backward(retain_graph=True)
     # A_loss backward step shouldn't propagate to _f nor _r, and by extension GIN parameters.
     for p in list(model.GIN.parameters()):
         print(p.grad)
 
     train_loss = F.cross_entropy(out, y)
-    torch.autograd.backward(train_loss,
-                            inputs=list(params))
+    torch.autograd.backward(train_loss, inputs=params)
     for p in list(model.GIN.parameters()):
         print(p.grad)
     optimizer.step()

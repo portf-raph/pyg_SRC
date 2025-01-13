@@ -1,13 +1,12 @@
 import torch
 from torch import Tensor
 import torch.nn.functional as F
-import torchopt
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def get_dict(A: Tensor, 
+def get_dict(A: Tensor,
              V: Tensor,
              eigs: Tensor,
              K: int,
@@ -28,7 +27,6 @@ def get_dict(A: Tensor,
     D = D.split(num_nodes * in_channels, dim=0)
     D = torch.stack(D, dim=0)
     D = D.t()
-    D = F.normalize(D,p=2, dim=0, eps=1e-12)
 
     return D
 
@@ -49,32 +47,33 @@ def FISTA(
     _lambda: float
 ) -> torch.Tensor:
 
-    c = PowerMethod(_D_stack)
+    W = torch.linalg.norm(_D_stack, ord=2, dim=0)
+    _D = _D_stack / W.unsqueeze(0)   # UNIT; no need to detach b/c of use of torch.autograd.backward()
+    c = PowerMethod(_D)
     eta = 1 / c
-    FISTA_ITER = 100
+    FISTA_ITER = 200
 
-    params = soft_threshold(eta * _D_stack.T @ _f_stack, _lambda)
-    Z = params.clone()
+    params = soft_threshold(eta * _D.T @ _f_stack, _lambda)
+    Z = params.clone().to(device)
     t = 1
 
     for _ in range(FISTA_ITER):
         _r_1 = params.clone()
-        residual = _D_stack @ Z - _f_stack
-        params = soft_threshold(Z - eta * _D_stack.T @ residual, _lambda / c)
+        residual = _D @ Z - _f_stack
+        params = soft_threshold(Z - eta * _D.T @ residual, _lambda / c)
 
         t_1 = t
         t = (1 + np.sqrt(1 + 4 * t**2)) / 2
-        Z = params + ((t_1 - 1) / t * (params - _r_1)).to(device)
+        Z = params + ((t_1 - 1) / t * (params - _r_1))
+    return params.squeeze() / W   # RESCALE
 
-    return params
 
-
-def PowerMethod(_D_stack):
+def PowerMethod(_D):
     ITER = 100
-    r = torch.randn(_D_stack.shape[1], device=device)
+    r = torch.randn(_D.shape[1], device=device)
     for i in range(ITER):
-        Dr = _D_stack @ r
-        r = _D_stack.T @ Dr
+        Dr = _D @ r
+        r = _D.T @ Dr
         nm = torch.norm(r,p=2)
         r = r/nm
 

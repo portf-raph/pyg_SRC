@@ -1,17 +1,19 @@
 import torch
+import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
 from utils.dict_learning import get_dict, scode_obj, FISTA
 
+
 class SparseCoder(torch.nn.Module):
     def __init__(self,
                  K: int,
-                 in_channels: int,  # C
-                 num_atoms: int,  # M
+                 in_channels: int,
+                 num_atoms: int,
                  num_classes: int,
                  _lambda: float,
                  _eta: float,
-                 backward: bool,
+                 compute_loss: bool,
                  partition: list[int],
                  device='cpu'
                  ):
@@ -24,11 +26,12 @@ class SparseCoder(torch.nn.Module):
         self.partition = partition
         self._lambda = _lambda
         self._eta = _eta
-        self.backward = backward
+        self.compute_loss = compute_loss
         self.device = device
 
-        self.A = Parameter(torch.randn(self.K, self.in_channels*self.num_atoms)).to(device)   # TODO: A init
-        self.A_loss = 0
+        self.A = Parameter(torch.randn(self.K, self.in_channels*self.num_atoms, device=device))   # TODO: A init
+        self.A_fidelity = 0
+        self.A_incoherence = 0
 
         # Selection operators
         assert self.partition[0] == 0
@@ -38,7 +41,8 @@ class SparseCoder(torch.nn.Module):
 
     def forward(self,
                 data_dicts: list[dict]):
-        self.A_loss = 0
+        self.A_fidelity = 0
+        self.A_incoherence = 0
         _r_batch = []
         for data_dict in data_dicts:       # TODO: parallel implementation
             edge_index = data_dict['edge_index']
@@ -56,10 +60,11 @@ class SparseCoder(torch.nn.Module):
             start = self.partition[y]
             end = self.partition[y+1]
             # free memory asap, so compute incoherence now
-            if self.backward:
-                _D_label = D[:, start:end]
-                _D_rest = torch.cat((D[:, 0:start], D[:, end:self.partition[-1]]), dim=1)
-                incoherence = torch.sum(torch.square(_D_label.T @ _D_rest))
+            if self.compute_loss:
+                _D = F.normalize(D, p=2,dim=0, eps=1e-12)
+                _D_label = _D[:, start:end]
+                _D_rest = torch.cat((_D[:, 0:start], _D[:, end:self.partition[-1]]), dim=1)
+                self.A_incoherence += torch.sum(torch.square(_D_label.T @ _D_rest))
 
             sub_Q = torch.cat((self.Q[:, start:end],
                                self.Q[:, self.partition[-2]:self.partition[-1]]), dim=1)
@@ -75,12 +80,13 @@ class SparseCoder(torch.nn.Module):
                 )
             _r = FISTA(_f_stack=_f_stack, _D_stack=_D_stack, _lambda=self._lambda)
 
-            if self.backward:
+            if self.compute_loss:
                 _D = _D_stack[0:-padding, :]
-                _f = _f_stack.detach()[0:-padding, :]   # detach _f and _r from A_loss.backward()
+                _f = _f_stack.detach()[0:-padding, :]   # TODO: validate detaching
                 fidelity = (1/2) * torch.sum(torch.square(_f - _D @ _r.detach()))
-                self.A_loss += fidelity + self._eta * incoherence
+                self.A_fidelity += fidelity
             _r_batch.append(_r)
 
-        self.A_loss = self.A_loss / len(data_dicts)
+        self.A_fidelity = self.A_fidelity / len(data_dicts)
+        self.A_incoherence = self.A_incoherence / len(data_dicts)
         return _r_batch
