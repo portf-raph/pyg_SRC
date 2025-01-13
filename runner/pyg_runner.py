@@ -18,7 +18,6 @@ from utils.train_helper import *
 
 logger = logging.getLogger(__name__)
 
-
 class PYGRunner(object):
     def __init__(
         self,
@@ -39,7 +38,7 @@ class PYGRunner(object):
         self.gpus = script_cfg['gpus']
 
         self.model = model_object
-        self.train_dataset = train_dataset
+        self.train_dataset = train_dataset    # all PthDataset objects
         self.dev_dataset = dev_dataset
         self.test_dataset = test_dataset
 
@@ -62,13 +61,17 @@ class PYGRunner(object):
 
         # model
         model = self.model
+        _eta = self.model.SC._eta
         if self.use_gpu:
             device = torch.device('cuda')
             model = nn.DataParallel(model, device_ids=self.gpus).cuda()
+        else:
+            device = torch.device('cpu')
 
         # optimizer
         params = filter(lambda p: p.requires_grad and p is not self.model.SC.A,
                         self.model.parameters())
+        params = list(params)
         A = self.model.SC.A
 
         if self.train_cfg['optimizer'] == 'SGD':
@@ -83,7 +86,7 @@ class PYGRunner(object):
                 'weight_decay': self.train_cfg['wd_A']}
             ])
 
-        elif self.train_cfg.optimizer == 'Adam':
+        elif self.train_cfg['optimizer'] == 'Adam':
             optimizer = optim.Adam([
                 {'params': params,
                 'lr': self.train_cfg['lr'],
@@ -105,38 +108,46 @@ class PYGRunner(object):
         # reset gradient
         optimizer.zero_grad()
         if self.train_cfg['is_resume']:
-            load_model(self.model, self.train_cfg['resume_model'], optimizer=optimizer) 
+            load_model(self.model, self.train_cfg['resume_model'], optimizer=optimizer)
 
         # training loop
         iter_count = 0
         best_val_loss = np.inf
         results = defaultdict(list)
         for epoch in range(self.train_cfg['max_epoch']):
-            epoch_loss = []
+            epoch_loss = 0
             # validation
             if (epoch + 1) % self.train_cfg['valid_epoch'] == 0 or epoch == 0:
                 model.eval()
-                val_loss = []
+                val_loss = 0
+                A_fidelity = 0
+                A_incoherence = 0
                 correct = 0
 
                 for data_dicts in tqdm(dev_loader):
                     if self.use_gpu:
                         data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                         else v for k, v in d.items()} for d in data_dicts]
-                    y = torch.LongTensor([d['y'].item() for d in data_dicts]) 
+                    y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)
                     with torch.no_grad():
-                        out = model(data_dicts) 
-                        curr_loss = F.cross_entropy(out, y).cpu().numpy()
-                        val_loss += [curr_loss]
+                        out = model(data_dicts)
+                        val_loss += F.cross_entropy(out, y).item()    # TODO: test
+                        A_fidelity += self.model.SC.A_fidelity
+                        A_incoherence += self.model.SC.A_incoherence
                         pred = out.max(dim=1)[1]
                         correct += pred.eq(y).sum().item()
 
-                # TODO: add dictionary-related metrics
+                len_loader = len(dev_loader)
+                val_loss = val_loss / len_loader
+                A_fidelity = A_fidelity / len_loader
+                A_incoherence = A_incoherence / len_loader
                 val_acc = correct / len(dev_loader.dataset)
-                val_loss = float(np.mean(val_loss))
-                print("Avg. Validation CrossEntropy = {}".format(val_loss)) 
+                print("Avg. Validation CrossEntropy = {}".format(val_loss))
                 print("Avg. Validation Accuracy = {}".format(val_acc))
                 results['val_loss'] += [val_loss]
+                results['A_fidelity'] += [A_fidelity]
+                results['A_incoherence'] += [A_incoherence]
+                results['val_acc'] += [val_acc]
 
                 # save best model
                 if val_loss < best_val_loss:
@@ -150,7 +161,7 @@ class PYGRunner(object):
 
                 logger.info("Current Best Validation CrossEntropy = {}".format(best_val_loss))
 
-                # early stop
+                # check early stop
                 if early_stop.tick([val_acc]):
                   print("STOPPING TIME DUE NOW")
                   snapshot(
@@ -159,35 +170,34 @@ class PYGRunner(object):
                       self.script_cfg,
                       epoch + 1,
                       tag='last')
-                  break
+                  break   # TODO: configure SC.compute_loss
 
             # training
             model.train()
-            lr_scheduler.step()
-            params = list(params)
             for data_dicts in train_loader:
                 optimizer.zero_grad()
                 if self.use_gpu:
                     data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                     else v for k, v in d.items()} for d in data_dicts]
-                y = torch.LongTensor([d['y'].item() for d in data_dicts]) 
+                y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)
                 out = model(data_dicts)
 
-                self.model.SC.A_loss.backward(retain_graph=True)  
+                A_loss = self.model.SC.A_fidelity + _eta * self.model.SC.A_incoherence
+                A_loss.backward(retain_graph=True)
                 train_loss = F.cross_entropy(out, y)
                 torch.autograd.backward(
                             train_loss,
-                            inputs=params)    
+                            inputs=params)
 
                 optimizer.step()
-                train_loss = float(train_loss.data.cpu().numpy())
+                train_loss = float(train_loss.data.cpu().numpy())       # TODO: remove this
                 results['train_loss'] += [train_loss]
                 results['train_step'] += [iter_count]
                 epoch_loss += train_loss
 
                 # display loss
                 if (iter_count + 1) % self.train_cfg['display_iter'] == 0:
-                    logger.info("Loss @ epoch {:04d} iteration {:08d} = {}".format( 
+                    logger.info("Loss @ epoch {:04d} iteration {:08d} = {}".format(
                         epoch + 1, iter_count + 1, train_loss))
 
                 iter_count += 1
@@ -198,6 +208,7 @@ class PYGRunner(object):
 
             epoch_loss = epoch_loss / len(train_loader)
             print("Loss @ epoch {:04d} = {}".format(epoch+1, epoch_loss))
+            lr_scheduler.step()
 
         results['best_val_loss'] += [best_val_loss]
         pickle.dump(results,
@@ -228,7 +239,7 @@ class PYGRunner(object):
             if self.use_gpu:
                 data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                 else v for k, v in d.items()} for d in data_dicts]
-            y = torch.LongTensor([d['y'].item() for d in data_dicts])
+            y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)
             with torch.no_grad():
                 out = model(data_dicts)
                 curr_loss = F.cross_entropy(out, y).cpu().numpy()
