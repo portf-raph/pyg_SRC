@@ -1,8 +1,8 @@
-from utils.network import MLP
-from model.GIN import GIN_Processor
-from model.SparseCoder import SparseCoder
-
 import torch
+
+from utils.network import MLP
+from .GIN import GIN_Processor
+from .SparseCoder import SparseCoder
 
 
 class SRCNet(torch.nn.Module):
