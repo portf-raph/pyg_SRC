@@ -73,7 +73,7 @@ def test_SRCNet():
 
     data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                     else v for k, v in d.items()} for d in data_dicts]
-    y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)
+    y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)   # to(device) ?
     out = model(data_dicts)
 
     for p in list(model.GIN.parameters()):

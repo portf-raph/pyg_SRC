@@ -108,7 +108,7 @@ class PYGRunner(object):
         # reset gradient
         optimizer.zero_grad()
         if self.train_cfg['is_resume']:
-            load_model(self.model, self.train_cfg['resume_model'], optimizer=optimizer)
+            load_model(self.model, self.train_cfg['resume_model'], optimizer=optimizer)   # mod call
 
         # training loop
         iter_count = 0
@@ -130,7 +130,7 @@ class PYGRunner(object):
                         else v for k, v in d.items()} for d in data_dicts]
                     y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)
                     with torch.no_grad():
-                        out = model(data_dicts)
+                        out = model(data_dicts)    # FORWARD
                         val_loss += F.cross_entropy(out, y).item()    # TODO: test
                         A_fidelity += self.model.SC.A_fidelity
                         A_incoherence += self.model.SC.A_incoherence
@@ -170,9 +170,10 @@ class PYGRunner(object):
                       self.script_cfg,
                       epoch + 1,
                       tag='last')
-                  break   # TODO: configure SC.compute_loss
+                  break
 
             # training
+            # TODO: configre model.SC.compute_loss
             model.train()
             for data_dicts in train_loader:
                 optimizer.zero_grad()
@@ -180,7 +181,7 @@ class PYGRunner(object):
                     data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                     else v for k, v in d.items()} for d in data_dicts]
                 y = torch.tensor([d['y'].item() for d in data_dicts], dtype=torch.long, device=device)
-                out = model(data_dicts)
+                out = model(data_dicts) # FORWARD
 
                 A_loss = self.model.SC.A_fidelity + _eta * self.model.SC.A_incoherence
                 A_loss.backward(retain_graph=True)
@@ -190,9 +191,9 @@ class PYGRunner(object):
                             inputs=params)
 
                 optimizer.step()
-                train_loss = float(train_loss.data.cpu().numpy())       # TODO: remove this
+                train_loss = float(train_loss.data.cpu().numpy())
                 results['train_loss'] += [train_loss]
-                results['train_step'] += [iter_count]
+                results['train_step'] += [iter_count]   # TODO: record A loss statistics
                 epoch_loss += train_loss
 
                 # display loss

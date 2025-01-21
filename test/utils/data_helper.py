@@ -38,7 +38,7 @@ def test_get_eigs(edge_index):
     return 0
 
 
-def test_atol_eigs(edge_index):
+def test_atol_eigs(edge_index):   # TODO: implement explicit cpu and cuda device testing
     if edge_index is None:
         torch.manual_seed(1)
         edge_index = er_graph(num_nodes=20, num_edges=200)

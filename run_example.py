@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import logging
 import datetime
@@ -48,18 +49,18 @@ def main():
     #3. Dataset
     dataset = PthDataset(load_dir=args.dataset_load_dir)
 
-    torch.manual_seed(script_cfg.seed)
-    torch.cuda.manual_seed_all(script_cfg.seed)
+    torch.manual_seed(script_cfg['seed'])
+    torch.cuda.manual_seed_all(script_cfg['seed'])
     train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+    dev_size = len(dataset) - train_size
+    train_dataset, dev_dataset = random_split(dataset, [train_size, dev_size])
 
     # 4. logger
     logging.basicConfig(level=args.log_level,
                         filename='exp/log_{}'.format(datetime.datetime.now()),
                         filemode='a',)
     logger.info("Writing log file to {}".format(log_file))
-    logger.info("Exp instance id = {}".format(script_cfg.run_id))
+    logger.info("Exp instance id = {}".format(script_cfg['run_id']))
     logger.info("Exp comment = {}".format(args.comment))
     logger.info("Config =")
     print(">" * 80)
@@ -79,5 +80,5 @@ def main():
     sys.exit(0)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

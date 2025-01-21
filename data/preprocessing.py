@@ -12,7 +12,7 @@ from utils.data_helper import get_eigs
 
 def dump_eigs_data(
               save_dir: str,
-              ds_name: str,
+              dataset_name: str,
               tag: str,
               dataset: Dataset,
               ):
@@ -20,7 +20,7 @@ def dump_eigs_data(
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
-    log_file = os.path.join(save_dir, 'log_{}.txt'.format(ds_name))
+    log_file = os.path.join(save_dir, 'log_{}.txt'.format(dataset_name))
     logger = logging.getLogger(__name__)
     logging.basicConfig(filename=log_file, level=logging.INFO)
     logger.info('Dumping eigs data from {}'.format(tag))
@@ -35,7 +35,7 @@ def dump_eigs_data(
 
         dense_adj = to_dense_adj(edge_index=data.edge_index,
                                  edge_attr=data.edge_attr)
-        eigs, V = get_eigs(dense_adj)    
+        eigs, V = get_eigs(dense_adj)
         if count == 0:
             logger.info('STORAGE: {}'.format(data.edge_index.device))
         data_dict['eigs'] = eigs
@@ -48,7 +48,7 @@ def dump_eigs_data(
         torch.save(
         data_dict,
         open(
-            os.path.join(save_dir, '{}_{}_{:05d}.pth'.format(ds_name, tag, count)),
+            os.path.join(save_dir, '{}_{}_{:05d}.pth'.format(dataset_name, tag, count)),
             'wb'))
 
         count += 1
@@ -63,7 +63,7 @@ def main():
     )
     parser.add_argument('--save_root', type=str, default='../data',
                         required=True, help='Script config file path')
-    parser.add_argument('--ds_name', type=str, default='PROTEINS',
+    parser.add_argument('--dataset_name', type=str, default='PROTEINS',
                         required=True, help='Name of TUDataset')
     parser.add_argument('--tag', type=str, default='train',
                         required=True, help='Additional dataset tag')
@@ -71,11 +71,11 @@ def main():
     args = parser.parse_args()
 
     # 2. Pickel dump
-    save_dir = os.path.join(args.save_root, args.ds_name, 'pth')
-    dataset = TUDataset(root=args.save_root, name=args.ds_name)
+    save_dir = os.path.join(args.save_root, args.dataset_name, 'pth')
+    dataset = TUDataset(root=args.save_root, name=args.dataset_name)
     dump_eigs_data(
         save_dir=save_dir,
-        ds_name = args.ds_name,
+        dataset_name = args.dataset_name,
         tag = args.tag,
         dataset=dataset
         )

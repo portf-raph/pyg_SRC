@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 
 
@@ -63,3 +64,8 @@ class EarlyStopper(object):
     is_stop = all([all(xx) for xx in self._val])
 
     return is_stop
+
+
+def get_config(file_name):    # cfg dicts stored in json
+  with open(file_name, 'r') as f:
+    return json.load(f)
