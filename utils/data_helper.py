@@ -1,7 +1,7 @@
-from torch import Tensor
-import cupy as cp
 import numpy as np
+from math import sqrt
 
+from torch import Tensor
 from torch_geometric.utils import scatter
 from torch_geometric.data import Batch, Data
 
@@ -34,6 +34,10 @@ def atol_eigs(eigs, edge_index) -> Tensor:
     return torch.ones(eigs.shape[0], device=device) - deg_inv_sqrt * eigs * deg_inv_sqrt
 
 
+def norm_eigs(eigs) -> Tensor:
+    return eigs / sqrt(eigs.shape[0])
+
+
 def pyg_batch(data_dicts: list[dict]) -> Batch:
     batch = []
     for data_dict in data_dicts:
@@ -43,3 +47,37 @@ def pyg_batch(data_dicts: list[dict]) -> Batch:
           )
         batch.append(graph)
     return Batch.from_data_list(batch, follow_batch=['x'])
+
+
+def serial_routine(
+                data: Data,
+                upper: float,
+                lower: float,
+                count: int,
+                logger
+                ):
+    data_dict = {}
+    data_dict['edge_index'] = data.edge_index
+    data_dict['edge_attr'] = data.edge_attr
+    data_dict['x'] = data.x
+    data_dict['y'] = data.y
+    dense_adj = to_dense_adj(edge_index=data.edge_index,
+                             edge_attr=data.edge_attr)
+    eigs, V = get_eigs(dense_adj)
+
+    data_dict['eigs'] = eigs
+    if eigs is None:
+        logger.info('eigs is None @ count {}'.format(count))
+    eigs = norm_eigs(eigs)
+    eigs_max = torch.max(eigs).item()
+    eigs_min = torch.min(eigs).item()
+    if eigs_max > upper:
+        upper = eigs_max
+    if eigs_min < lower:
+        lower = eigs_min
+
+    data_dict['V'] = V
+    if V is None:
+        logger.info('V is None @ count {}'.format(count))
+
+    return data_dict, upper, lower

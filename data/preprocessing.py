@@ -1,59 +1,79 @@
 import os
-import pickle
-import argparse
+import math
 import logging
+import argparse
+import numpy as np
 
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import TUDataset
 from torch_geometric.utils import to_dense_adj
 
-from utils.data_helper import get_eigs
+from utils.data_helper import get_eigs, serial_routine
 
 
 def dump_eigs_data(
               save_dir: str,
               dataset_name: str,
-              tag: str,
               dataset: Dataset,
+              seed: int,
               ):
 
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
+    for split_tag in ['train', 'val', 'test']:
+        if not os.path.exists(os.path.join(save_dir, split_tag)):
+            os.mkdir(os.path.join(save_dir, split_tag))
 
     log_file = os.path.join(save_dir, 'log_{}.txt'.format(dataset_name))
     logger = logging.getLogger(__name__)
     logging.basicConfig(filename=log_file, level=logging.INFO)
-    logger.info('Dumping eigs data from {}'.format(tag))
+    logger.info('Dumping eigs data from {}'.format(dataset_name))
 
     count = 0
-    for data in dataset:
-        data_dict = {}
-        data_dict['edge_index'] = data.edge_index
-        data_dict['edge_attr'] = data.edge_attr
-        data_dict['x'] = data.x
-        data_dict['y'] = data.y
+    upper = 0
+    lower = 0
 
-        dense_adj = to_dense_adj(edge_index=data.edge_index,
-                                 edge_attr=data.edge_attr)
-        eigs, V = get_eigs(dense_adj)
-        if count == 0:
-            logger.info('STORAGE: {}'.format(data.edge_index.device))
-        data_dict['eigs'] = eigs
-        if eigs is None:
-            logger.info('eigs is None @ count {}'.format(count))
-        data_dict['V'] = V
-        if V is None:
-            logger.info('V is None @ count {}'.format(count))
+    torch.manual_seed(seed)
+    indices = torch.randperm(len(dataset)).tolist()
+    train_size = int(0.9* len(dataset))
+    train_set = dataset[indices[:train_size]]
+    test_set = dataset[indices[train_size:]]
 
-        torch.save(
-        data_dict,
-        open(
-            os.path.join(save_dir, '{}_{}_{:05d}.pth'.format(dataset_name, tag, count)),
-            'wb'))
+    indices = torch.randperm(len(train_set)).tolist()
+    sub_train_size = int(0.9*len(train_set))
+    train_subset = train_set[indices[:sub_train_size]]
+    val_set = train_set[indices[sub_train_size:]]
 
-        count += 1
+    for split in [train_subset, val_set, test_set]:
+        split_tag = 'train' if split == train_subset else 'val' if split == val_set else 'test'
+        for data in split:
+            data_dict, upper, lower = serial_routine(
+                data=data,
+                upper=upper,
+                lower=lower,
+                count=count,
+                logger=logger
+            )
+            torch.save(
+                data_dict,
+                open(
+                    os.path.join(save_dir, split_tag, '{}_{}_{:05d}.pth'.format(dataset_name, split_tag, count)),
+                    'wb'))
+            if split_tag == 'train' and count == 0:
+                logger.info('STORAGE: {}'.format(data.edge_index.device))
+            count += 1
+        logger.info('Done {} set'.format(split_tag))
 
-    logger.info('Done')
+    extreme_eigs = {
+        'upper': upper,
+        'lower': lower,
+    }
+    print(extreme_eigs)
+    torch.save(
+        extreme_eigs,
+        open(os.path.join(save_dir, '{}_extreme_eigs.pth'.format(dataset_name)),
+            'wb')
+        )
 
 
 def main():
@@ -65,9 +85,8 @@ def main():
                         required=True, help='Script config file path')
     parser.add_argument('--dataset_name', type=str, default='PROTEINS',
                         required=True, help='Name of TUDataset')
-    parser.add_argument('--tag', type=str, default='train',
-                        required=True, help='Additional dataset tag')
-
+    parser.add_argument('--seed', type=int, default=0,
+                        required=True, help='Seed for random split')
     args = parser.parse_args()
 
     # 2. Pickel dump
@@ -76,8 +95,8 @@ def main():
     dump_eigs_data(
         save_dir=save_dir,
         dataset_name = args.dataset_name,
-        tag = args.tag,
-        dataset=dataset
+        dataset = dataset,
+        seed = args.seed
         )
 
 if __name__ == '__main__':
