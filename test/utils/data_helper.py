@@ -6,8 +6,8 @@ import torch_geometric
 from torch_geometric.utils import scatter, to_dense_adj
 from torch_geometric.data import Dataset
 
-from ...utils.random_graph import er_graph
-from ...utils.data_helper import *
+from utils.random_graph import er_graph
+from utils.data_helper import *
 
 
 def test_get_eigs(edge_index):
@@ -40,7 +40,6 @@ def test_get_eigs(edge_index):
 
 
 def test_atol_eigs(edge_index):
-    """TODO: implement explicit cpu and cuda device testing"""
     if edge_index is None:
         torch.manual_seed(1)
         edge_index = er_graph(num_nodes=20, num_edges=200)    # mod call
