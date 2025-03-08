@@ -1,0 +1,32 @@
+{
+    "train": {
+        "batch_size": 16,
+        "shuffle": true,
+        "num_workers": 0,
+        "optimizer": "Adam",
+        "lr": 1e-3,
+        "momentum": 0.9,
+        "wd": 0.5e-4,
+        "lr_A": 1e-3,
+        "momentum_A": 0.9,
+        "wd_A": 0.0e-4,
+        "lr_decay_steps": [1000],
+        "lr_decay": 0.0,
+        "is_resume": false,
+        "resume_model": null,
+        "max_epoch": 200,
+        "valid_epoch": 5,
+        "display_iter": 10,
+        "snapshot_epoch": 10000
+    },
+    "test": {
+        "batch_size": 16,
+        "num_workers": 0,
+        "test_model": null
+    },
+    "use_gpu": true,
+    "gpus": [0],
+    "save_dir": "../exp/pyg_SRC",
+    "seed": 1,
+    "run_id": 1
+}
