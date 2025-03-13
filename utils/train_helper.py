@@ -70,3 +70,21 @@ class EarlyStopper(object):
 def get_config(file_name):    # cfg dicts stored in json
   with open(file_name, 'r') as f:
     return json.load(f)
+
+
+def LELoss(out: Tensor,
+           y: Tensor,
+           temp: float,
+           reduce: str='mean'):
+    rows = torch.arange(out.shape[0], device=out.device)
+    logits = out - out[rows, y]
+    logits = torch.exp(-temp*out)
+    loss = torch.sum(logits, dim=1)
+    loss = torch.log(loss)
+    if reduce is "mean":
+        return torch.mean(loss)
+    elif reduce is "sum":
+        return torch.sum(loss)
+    else:
+        raise Exception("Unknown reduction")
+    

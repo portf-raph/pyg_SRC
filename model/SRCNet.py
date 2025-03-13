@@ -3,7 +3,8 @@ import torch
 from utils.data_helper import pyg_batch
 from utils.network import MLP
 from .GIN import GIN_Processor
-from .SparseCoder import SparseCoder
+from .scode_DLCOPAR import DL_COPAR
+from .scode_DLCOPAR_vanilla import DL_COPAR_van
 from .LeastEnergy import LeastEnergy
 
 
@@ -12,6 +13,7 @@ class SRCNet(torch.nn.Module):
                  GIN_cfg: dict,
                  SC_cfg: dict,
                  OUT_cfg: dict,
+                 model_SC: str,
                  model_class: str,
                  device='cpu'
                  ):
@@ -19,10 +21,17 @@ class SRCNet(torch.nn.Module):
         self.device = device
         self.GIN = GIN_Processor(**GIN_cfg,
                                  device=device)
-        self.SC = SparseCoder(**SC_cfg,
-                              device=device)
+        self.model_SC = model_SC
+        if model_SC = "DL_COPAR":
+            self.SC = DL_COPAR(**SC_cfg,
+                               device=device)
+        elif model_SC = "DL_COPAR_van":
+            self.SC = DL_COPAR_van(**SC_cfg,
+                                   device=device)
+        else:
+            raise Exception("Invalid sparse coder")
+
         self.model_class = model_class
-        
         if model_class == "MLP":
             self.OUT = MLP(**OUT_cfg,
                            device=device)

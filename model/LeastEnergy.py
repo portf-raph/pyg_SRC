@@ -6,10 +6,14 @@ class LeastEnergy(torch.nn.Module):
                  num_atoms: int,
                  num_classes: int,
                  partition: list[int],
+                 temperature: float
+                 mode: str,
                  device='cpu'):
         super().__init__()
         self.num_classes = num_classes
         self.partition = partition
+        self.temperature = temperature
+        self.mode = mode
         assert self.partition[0] == 0
         assert self.partition[-1] == num_atoms
         assert self.num_classes + 2 == len(self.partition)
