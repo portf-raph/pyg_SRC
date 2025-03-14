@@ -17,7 +17,7 @@ class SparseCoder(torch.nn.Module):
                  _lambda: float,
                  _eta: float,
                  partition: list[int],
-                 laplacian_eigs: bool=True,
+                 laplacian_eigs: bool=False,
                  compute_loss: bool=True,
                  pass_data: bool=False,
                  device='cpu'
@@ -61,7 +61,7 @@ class SparseCoder(torch.nn.Module):
                              K=self.K,
                              in_channels=self.in_channels,
                              V=data_dict['V'],
-                             eigs=atol_eigs(data_dict['eigs'], data_dict['edge_index']) if self.laplacian_eigs else norm_eigs(data_dict['eigs']))
+                             eigs=atol_eigs(data_dict['eigs'], data_dict['edge_index']) if self.laplacian_eigs else data_dict['eigs'])
                              for data_dict in data_dicts]
         _D_batch = torch.stack(
                 pad_columns(_D_batch)

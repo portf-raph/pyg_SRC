@@ -45,4 +45,4 @@ class LeastEnergy(torch.nn.Module):
         )
         fid_batch = torch.stack(torch.split(fid_batch.squeeze(), B)).T
         
-        return -fid_batch
+        return fid_batch

@@ -5,6 +5,7 @@ from utils.network import MLP
 from .GIN import GIN_Processor
 from .SparseCoder import SparseCoder
 from .LeastEnergy import LeastEnergy
+from .LeastActivation import LeastActivation
 
 
 class SRCNet(torch.nn.Module):
@@ -29,6 +30,9 @@ class SRCNet(torch.nn.Module):
         elif model_class == "LeastEnergy":
             self.OUT = LeastEnergy(**OUT_cfg,
                                    device=device)
+        elif model_class == "LeastActivation":
+            self.OUT = LeastActivation(**OUT_cfg,
+                                       device=device)
         else:
             raise Exception("Invalid classification model")
 
@@ -50,6 +54,8 @@ class SRCNet(torch.nn.Module):
             out = self.OUT(_r_batch=_r_batch,
                            _D_batch=_D_batch,
                            _f_batch=_f_batch)
-            
+        elif self.model_class == "LeastActivation":
+            out = self.OUT(_r_batch.squeeze())
+
         del _D_batch, _f_batch
         return out, A_fidelity, A_incoherence

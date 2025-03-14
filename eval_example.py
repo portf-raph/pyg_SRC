@@ -17,17 +17,17 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 
 # 1. Load data
 dataset = PthDataset(load_dir='./data/PROTEINS/pth/train')
-data_loader = DataLoader(dataset, batch_size=8, shuffle=False, collate_fn=lambda x: x)
+data_loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=lambda x: x)
 
 # 2. Load model
 GIN_cfg = get_config('config/DEFAULT/DEF_GIN_cfg.json')
 SC_cfg = get_config('config/DEFAULT/DEF_SC_cfg.json')
-MLP_cfg = get_config('config/DEFAULT/DEF_MLP_cfg.json')
-model_class = "MLP"
+OUT_cfg = get_config('config/DEFAULT/DEF_LE_cfg.json')
+model_class = "LeastEnergy"
 
 model = SRCNet(GIN_cfg=GIN_cfg,
                SC_cfg=SC_cfg,
-               OUT_cfg=MLP_cfg,
+               OUT_cfg=OUT_cfg,
                model_class=model_class,
                device=device)
 load_model(model=model, file_name='../exp/pyg_SRC/model_snapshot_best.pth', optimizer=None)

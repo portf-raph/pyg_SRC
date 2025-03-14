@@ -67,6 +67,7 @@ class PYGRunner(object):
         # model
         model = self.model
         _eta = self.model.SC._eta
+        LE_temp = self.train_cfg['LE_temp']
         if self.use_gpu:
             device = torch.device('cuda')
             model = nn.DataParallel(model, device_ids=self.gpus).cuda()
@@ -154,8 +155,8 @@ class PYGRunner(object):
                             _r_coeffs_handle.remove()
                             hook_trigger = False
                             
-                        val_loss += F.cross_entropy(out, y_batch).cpu().item()
-                        pred = out.max(dim=1)[1]
+                        val_loss += LELoss(out, y_batch, LE_temp).cpu().item()
+                        pred = (-out).max(dim=1)[1]  # d
                         correct += pred.eq(y_batch).sum().cpu().item()
 
                 val_loss = val_loss / len_dev_loader
@@ -215,7 +216,7 @@ class PYGRunner(object):
 
                 A_loss = A_fidelity + _eta * A_incoherence
                 A_loss.backward(retain_graph=True)  # d   # ISSUE 1
-                train_loss = F.cross_entropy(out, y_batch)
+                train_loss = LELoss(out, y_batch, LE_temp)
                 torch.autograd.backward(
                             train_loss,
                             inputs=params)    # ISSUE 2
@@ -226,6 +227,7 @@ class PYGRunner(object):
                     print('\nGIN grad: {}'.format(torch.mean(torch.abs(GIN_param.grad))))
                     print('\nA grad: {}'.format(torch.mean(torch.abs(A_param.grad))))
                     # print('OUT grad: {}'.format(torch.mean(torch.abs(OUT_param.grad))))
+                    print('\n A_fidelity: {}, A_incoherence: {}'.format(A_fidelity, A_incoherence))
                 # === GC ===
                 #gc.collect()
                 #torch.cuda.empty_cache()
@@ -293,7 +295,7 @@ class PYGRunner(object):
             y_batch = torch.tensor([d["y"].item() for d in data_dicts], dtype=torch.long, device=device)  # d
             with torch.no_grad():
                 out = model(data_dicts)
-                curr_loss = F.cross_entropy(out, y_batch).cpu().numpy()
+                curr_loss = LELoss(out, y_batch, self.traom_cfg['LE_temp']).cpu().numpy()
                 test_loss += [curr_loss]
 
         test_loss = float(np.mean(np.concatenate(test_loss)))

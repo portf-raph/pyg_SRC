@@ -1,7 +1,9 @@
 # Modified from https://github.com/lrjconan/LanczosNetwork/blob/master/utils/train_helper.py
 import os
 import json
+
 import torch
+from torch import Tensor
 
 
 def snapshot(model, optimizer, script_cfg, step, gpus=[0], tag=None):
@@ -70,3 +72,20 @@ class EarlyStopper(object):
 def get_config(file_name):    # cfg dicts stored in json
   with open(file_name, 'r') as f:
     return json.load(f)
+
+
+def LELoss(out: Tensor,
+           y: Tensor,
+           temp: float,
+           reduce: str='mean'):
+    rows = torch.arange(out.shape[0], device=out.device)
+    logits = out - out[rows, y].view(-1, 1)
+    logits = torch.exp(-temp*logits)
+    loss = torch.sum(logits, dim=1)
+    loss = torch.log(loss)
+    if reduce == "mean":
+        return torch.mean(loss)
+    elif reduce == "sum":
+        return torch.sum(loss)
+    else:
+        raise Exception("Unknown reduction")
