@@ -64,6 +64,44 @@ def get_R(
     return R_r
 
 
+def get_R_bmm(
+        data_dicts: list[dict],
+        _r_batch: Tensor,
+        K: int,
+        ):
+    V_batch = torch.stack(
+            pad_square([data_dict['V'] for data_dict in data_dicts])
+            )
+    eigs_batch = torch.stack(
+            pad_columns([data_dict['eigs'] for data_dict in data_dicts])
+            )   # val
+    G_k_batch = torch.stack(
+                [torch.pow(eigs_batch, k) for k in range(K)], dim=1
+            ).transpose(-2, -1)    # val
+    VG_k_batch = torch.bmm(V_batch, G_k_batch)
+    # hard part
+    M = _r_batch.shape[-1]
+    VG_k_expanded = VG_k.unsqueeze(0).expand(M, -1, -1, -1)
+    R_r_batch = torch.einsum('bijk, bi->bijk', VG_k_expanded, _r).transpose(0,1).reshape(V_batch.shape[0], V_batch.shape[1], -1)
+
+    return R_r_batch
+
+def pad_square(tensors: list[Tensor]):
+    lengths = [tensor.shape[0] for tensor in tensors]
+    max_length = max(lengths)
+    padded_tensors = [F.pad(tensor, (0, max_length - lengths[i], 0, max_length - lengths[i]))
+                      for i, tensor in enumerate(tensors)]
+    return padded_tensors
+
+
+def pad_columns(tensors):
+    lengths = [tensor.shape[0] for tensor in tensors]
+    max_length = max(lengths)
+    padded_tensors = [F.pad(tensor, (0, 0, 0, max_length - lengths[i]))
+                      for i, tensor in enumerate(tensors)]
+    return padded_tensors
+
+
 def get_OmegaP(
     class_weights: Tensor,
     bin_centers: Tensor,
@@ -152,11 +190,3 @@ def build_f_mend_alt(in_channels: int):
         return _f_stack
 
     return _f_mend_alt
-
-
-def pad_columns(tensors):
-    lengths = [tensor.shape[0] for tensor in tensors]
-    max_length = max(lengths)
-    padded_tensors = [F.pad(tensor, (0, 0, 0, max_length - lengths[i]))
-                      for i, tensor in enumerate(tensors)]
-    return padded_tensors

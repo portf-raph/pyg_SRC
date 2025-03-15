@@ -119,6 +119,17 @@ class FB_PYGRunner(object):
         iter_count = 0
         best_val_loss = np.inf
         results = defaultdict(list)
+       
+        # === Constant hooks ===
+        _r_f_batch, _r_f_batch_hook = build_r_f_batch_hook()
+        _r_f_batch_handle = self.model.SC.reg`
+        # === ////////////// ===
+
+        # FB globals
+        SC_K = self.model.SC.K
+        SC_Q = self.model.SC.Q
+        SC_partition = self.model.SC.partition
+        R_length = self.model.SC.num_atoms * SC_K
         for epoch in range(self.train_cfg['max_epoch']):
             # validation
             if (epoch + 1) % self.train_cfg['valid_epoch'] == 0 or epoch == 0:
@@ -192,11 +203,9 @@ class FB_PYGRunner(object):
             avg_A_incoherence = 0
             hook_trigger = True
 
-            # === Constant hooks ===
-            _r_f_batch, _r_f_batch_hook = build_r_f_batch_hook()
-            _r_f_batch_handle = self.model.SC.register_forward_hook(_r_f_batch_hook)
-            # === ////////////// ===
-
+            # FB Quadratic program
+            R_1 = torch.zeros((R_length, R_length), device=device)
+            R_2 = torch.zeros(R_length, device=device)
             for data_dicts in tqdm(train_loader):
                 # print(torch.cuda.memory_allocated(device)/torch.cuda.max_memory_allocated(device))
                 # print(f"Reserved: {torch.cuda.memory_reserved()/1e9} GB")
@@ -217,8 +226,40 @@ class FB_PYGRunner(object):
                     _r_coeffs_handle.remove()
                     hook_trigger = False
                 
-                # === Collect _r_batch, _f_batch ===
-                
+                # === Collect detached _r_batch, _f_batch ===
+                _r_batch = _r_f_batch['_r_batch']
+                _f_batch = _r_f_batch['_f_batch']
+                # _R_r_batch
+                _R_r_batch = get_R_bmm(data_dicts=data_dicts,
+                                       _r_batch=_r_batch,
+                                       K=SC_K)
+                R_1 += torch.sum(
+                                torch.bmm(_R_r_batch.transpose(-2, -1), _R_r_batch),dim=0
+                                )
+                R_2 += torch.sum(
+                            torch.bmm(_R_r_batch.transpose(-2, -1), _f_batch),dim=0
+                        )   # (B x CK x CK) x (B x CK x 1)
+
+                start_batch = [SC_partition[y] for y in y_batch]
+                end_batch = [SC_partition[y+1] for y in y_batch]
+                sub_Q_batch = torch.stack(
+                        [torch.cat((SC_Q[:, start:end],
+                                    SC_Q[:, SC_partition[-2]:SC_partition[-1]]), dim=1 for start, end in zip(start_batch, end_batch)]
+                _QQTr_batch = torch.bmm(
+                        sub_Q_batch, torch.bmm(sub_Q_batch.transpose(-2,-1), _r_batch.unsqueeze(-1))
+                    ) # val
+                _R_QQTr_batch = get_R(data_dicts=data_dicts,
+                                      _r_batch=_QQTr_batch,
+                                      K=SC_K)
+                R_1 += torch.sum(
+                                torch.bmm(_R_QQTr_batch.transpose(-2,-1), _R_QQTr_batch)
+                            )
+                R_2 += torch.sum(
+                        torch.bmm(_R_QQTr_batch.transpose(-2,-1), _f_batch),dim=0
+                    )
+                # === Incoherence penalty ===
+                # === /////////////////// ===
+
                 train_loss = F.cross_entropy(out, y_batch)
                 torch.autograd.backward(
                             train_loss,
@@ -226,9 +267,7 @@ class FB_PYGRunner(object):
                 if (iter_count + 1) % self.train_cfg['display_iter'] == 0:
                     GIN_param = next(iter(self.model.GIN.parameters()))
                     # OUT_param = next(iter(self.model.OUT.parameters()))
-                    A_param = self.model.SC.A
                     print('\nGIN grad: {}'.format(torch.mean(torch.abs(GIN_param.grad))))
-                    print('\nA grad: {}'.format(torch.mean(torch.abs(A_param.grad))))
                     # print('OUT grad: {}'.format(torch.mean(torch.abs(OUT_param.grad))))
                 # === GC ===
                 #gc.collect()
@@ -254,11 +293,17 @@ class FB_PYGRunner(object):
 
                 iter_count += 1
 
+            # === Parameter A update ===
+            R_1_bmm = lambda x: torch.bmm(R_1, x) 
+            A = self.model.SC.A.view(K, num_atoms, out_channels).transpose(0,1).reshape(-1, out_channels)
+            A = cg_batch(R_1_bmm, R_2)
+            self.model.SC.A = A.view(num_atoms, K, out_channels).transpose(0,1).reshape(-1, num_atoms*out_channels)
+            # === ////////////////// ===
             if (epoch + 1) % self.train_cfg['snapshot_epoch'] == 0:
                 self.logger.info("Saving Snapshot @ epoch {:04d}".format(epoch + 1))
                 snapshot(model.module
                          if self.use_gpu else model, optimizer, self.script_cfg, epoch + 1)
-             
+            
             avg_A_fidelity = avg_A_fidelity / len_train
             avg_A_incoherence = avg_A_incoherence / len_train
             results['train_A_fidelity'] += [avg_A_fidelity]
