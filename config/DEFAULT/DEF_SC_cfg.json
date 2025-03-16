@@ -1,12 +1,11 @@
 {
     "K": 8,
-    "num_atoms": 45,
+    "num_atoms": 60,
     "num_classes": 2,
-    "in_channels": 24,
+    "in_channels": 20,
     "split_factor": 1,
-    "_lambda": 0.05,
-    "_eta": 0.3,
-    "compute_loss": true,
-    "partition": [0, 15, 30, 45],
-    "laplacian_eigs": true
+    "_lambda": 0.04,
+    "_eta": 0.01,
+    "partition": [0,20,40,60],
+    "laplacian_eigs": false
 }

@@ -7,7 +7,7 @@
         "lr": 1e-3,
         "momentum": 0.9,
         "wd": 0.5e-4,
-        "lr_A": 1e-3,
+        "lr_A": 1e-2,
         "momentum_A": 0.9,
         "wd_A": 0.0e-4,
         "lr_decay_steps": [1000],

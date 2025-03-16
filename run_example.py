@@ -21,8 +21,8 @@ def main():
     parser.add_argument('--script_cfg', type=str, default='./config/DEFAULT/DEF_config.json')
     parser.add_argument('--GIN_cfg', type=str, default='./config/DEFAULT/DEF_GIN_cfg.json')
     parser.add_argument('--SC_cfg', type=str, default='./config/DEFAULT/DEF_SC_cfg.json')
-    parser.add_argument('--OUT_cfg', type=str, default='./config/DEFAULT/DEF_MLP_cfg.json')
-    parser.add_argument('--model_class', type=str, default='MLP')
+    parser.add_argument('--OUT_cfg', type=str, default='./config/DEFAULT/DEF_LE_cfg.json')
+    parser.add_argument('--model_class', type=str, default='LeastEnergy')
     parser.add_argument('--dataset_load_dir', type=str, default='./data/PROTEINS/pth/')
     parser.add_argument('--log_level', type=str, default='INFO',
                         help="Logging Level, \

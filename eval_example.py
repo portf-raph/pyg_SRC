@@ -22,8 +22,8 @@ data_loader = DataLoader(dataset, batch_size=8, shuffle=False, collate_fn=lambda
 # 2. Load model
 GIN_cfg = get_config('config/DEFAULT/DEF_GIN_cfg.json')
 SC_cfg = get_config('config/DEFAULT/DEF_SC_cfg.json')
-MLP_cfg = get_config('config/DEFAULT/DEF_MLP_cfg.json')
-model_class = "MLP"
+MLP_cfg = get_config('config/DEFAULT/DEF_LE_cfg.json')
+model_class = "LeastEnergy"
 
 model = SRCNet(GIN_cfg=GIN_cfg,
                SC_cfg=SC_cfg,

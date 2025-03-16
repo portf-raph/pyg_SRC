@@ -3,7 +3,7 @@
     "num_layers": 2,
     "skip_first_features": true,
     "MLP_cfg": {
-        "hid_dim": 12,
+        "hid_dim": 10,
         "num_hid": 2,
         "dp_cfg": {
             "skip_first": false,

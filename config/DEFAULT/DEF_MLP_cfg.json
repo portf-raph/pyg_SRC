@@ -1,5 +1,5 @@
 {
-    "in_dim": 45,
+    "in_dim": 60,
     "out_dim": 2,
     "hid_dim": 256,
     "num_hid": 2,

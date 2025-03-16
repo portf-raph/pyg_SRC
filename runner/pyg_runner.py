@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from logging import Logger
 
 from utils.train_helper import *
-from utils.hooks import build_r_coeffs_hook
+from utils.hooks import build_r_coeffs_hook, build_softmax_hook
 
 
 class PYGRunner(object):
@@ -67,11 +67,6 @@ class PYGRunner(object):
         # model
         model = self.model
         _eta = self.model.SC._eta
-        if self.use_gpu:
-            device = torch.device('cuda')
-            model = nn.DataParallel(model, device_ids=self.gpus).cuda()
-        else:
-            device = torch.device('cpu')
 
         # optimizer
         params = filter(lambda p: p.requires_grad and p is not self.model.SC.A,
@@ -103,6 +98,14 @@ class PYGRunner(object):
         else:
             raise ValueError("Non-supported optimizer!")
 
+        if self.train_cfg['is_resume']:
+            load_model(model, self.train_cfg['resume_model'], optimizer=optimizer)   # mod call
+        if self.use_gpu:
+            device = torch.device('cuda')
+            model = nn.DataParallel(model, device_ids=self.gpus).cuda()
+        else:
+            device = torch.device('cpu')
+
         early_stop = EarlyStopper([0.0], win_size=10, is_decrease=True)
         lr_scheduler = optim.lr_scheduler.MultiStepLR(
             optimizer,
@@ -111,13 +114,12 @@ class PYGRunner(object):
 
         # reset gradient
         optimizer.zero_grad()
-        if self.train_cfg['is_resume']:
-            load_model(model, self.train_cfg['resume_model'], optimizer=optimizer)   # mod call
 
         # training loop
         len_dev = len(self.dev_dataset)
         len_dev_loader = len(dev_loader)
         len_train = len(self.train_dataset)
+        len_train_loader = len(train_loader)
 
         iter_count = 0
         best_val_loss = np.inf
@@ -142,7 +144,9 @@ class PYGRunner(object):
                     if hook_trigger:
                         _, _r_coeffs_hook = build_r_coeffs_hook(y_batch=y_batch,
                                                                 partition=self.model.SC.partition)
+                        _, softmax_hook = build_softmax_hook()
                         _r_coeffs_handle = self.model.SC.register_forward_hook(_r_coeffs_hook)
+                        softmax_handle = self.model.OUT.register_forward_hook(softmax_hook)
                         
                     with torch.no_grad():
                         out, _, _ = model(data_dicts)    # FORWARD
@@ -152,6 +156,7 @@ class PYGRunner(object):
                         # === GC ===
                         if hook_trigger:
                             _r_coeffs_handle.remove()
+                            softmax_handle.remove()
                             hook_trigger = False
                             
                         val_loss += F.cross_entropy(out, y_batch).cpu().item()
@@ -193,6 +198,7 @@ class PYGRunner(object):
             model.train()
             avg_A_fidelity = 0
             avg_A_incoherence = 0
+            correct = 0
             hook_trigger = True
             for data_dicts in tqdm(train_loader):
                 # print(torch.cuda.memory_allocated(device)/torch.cuda.max_memory_allocated(device))
@@ -206,11 +212,14 @@ class PYGRunner(object):
                 if hook_trigger:
                     _, _r_coeffs_hook = build_r_coeffs_hook(y_batch=y_batch,
                                                             partition=self.model.SC.partition)
+                    _, softmax_hook = build_softmax_hook()
                     _r_coeffs_handle = self.model.SC.register_forward_hook(_r_coeffs_hook)
+                    softmax_handle = self.model.OUT.register_forward_hook(softmax_hook)
                 out, A_fidelity, A_incoherence = model(data_dicts) # FORWARD
 
                 if hook_trigger:
                     _r_coeffs_handle.remove()
+                    softmax_handle.remove()
                     hook_trigger = False
 
                 A_loss = A_fidelity + _eta * A_incoherence
@@ -219,6 +228,7 @@ class PYGRunner(object):
                 torch.autograd.backward(
                             train_loss,
                             inputs=params)    # ISSUE 2
+
                 if (iter_count + 1) % self.train_cfg['display_iter'] == 0:
                     GIN_param = next(iter(self.model.GIN.parameters()))
                     # OUT_param = next(iter(self.model.OUT.parameters()))
@@ -226,11 +236,15 @@ class PYGRunner(object):
                     print('\nGIN grad: {}'.format(torch.mean(torch.abs(GIN_param.grad))))
                     print('\nA grad: {}'.format(torch.mean(torch.abs(A_param.grad))))
                     # print('OUT grad: {}'.format(torch.mean(torch.abs(OUT_param.grad))))
+                    print('\n A_fidelity: {}, A_incoherence: {}'.format(A_fidelity, A_incoherence))
                 # === GC ===
                 #gc.collect()
                 #torch.cuda.empty_cache()
                 # === GC ===
                 optimizer.step()
+
+                pred = out.max(dim=1)[1]
+                correct += pred.eq(y_batch).sum().cpu().item()
                 avg_A_fidelity += A_fidelity.detach().cpu().item()
                 avg_A_incoherence += A_incoherence.detach().cpu().item()
 
@@ -255,11 +269,13 @@ class PYGRunner(object):
                 snapshot(model.module
                          if self.use_gpu else model, optimizer, self.script_cfg, epoch + 1)
              
-            avg_A_fidelity = avg_A_fidelity / len_train
-            avg_A_incoherence = avg_A_incoherence / len_train
+            avg_A_fidelity = avg_A_fidelity / len_train_loader
+            avg_A_incoherence = avg_A_incoherence / len_train_loader
+            train_acc = correct / len_train
+            print("Train accuracy at epoch {}: {}".format(epoch, train_acc))
             results['train_A_fidelity'] += [avg_A_fidelity]
             results['train_A_incoherence'] += [avg_A_incoherence]
-            lr_scheduler.step()
+            lr_scheduler.step() 
             
         results['best_val_loss'] += [best_val_loss]
         pickle.dump(results,
