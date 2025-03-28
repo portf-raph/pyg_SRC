@@ -1,5 +1,6 @@
 import os
 import pickle
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -10,14 +11,17 @@ from torch.utils.data import DataLoader
 from model.SRCNet import SRCNet
 from data.pth_dataset import PthDataset
 from utils.train_helper import load_model, get_config
+from runner.pyg_runner import PYGRunner
 
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+logger = logging.getLogger(__name__)
 
 
 # 1. Load data
-dataset = PthDataset(load_dir='./data/PROTEINS/pth/train')
-data_loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=lambda x: x)
+train_dataset = PthDataset(load_dir='./data/PROTEINS/pth/train')
+test_dataset = PthDataset(load_dir='./data/PROTEINS/pth/test')
+data_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, collate_fn=lambda x: x)
 
 # 2. Load model
 GIN_cfg = get_config('config/DEFAULT/DEF_GIN_cfg.json')
@@ -33,7 +37,7 @@ model = SRCNet(GIN_cfg=GIN_cfg,
 load_model(model=model, file_name='../exp/pyg_SRC/model_snapshot_best.pth', optimizer=None)
 model.train()
 
-# 3. Test train forward
+# 3. Train forward
 iter = 0
 for data_dicts in data_loader:
 
@@ -45,6 +49,12 @@ for data_dicts in data_loader:
     iter += 1
     if iter == 10:
         break
+
+# 4. Test forward
+script_cfg = get_config('config/DEFAULT/DEF_config.json')
+runner = PYGRunner(model_object=model, script_cfg=script_cfg, logger=logger,
+        train_dataset=None, dev_dataset=None, test_dataset=test_dataset)
+runner.test()
 
 # 4. Load graphs
 save_dir = '../exp/pyg_SRC'

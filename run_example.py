@@ -41,6 +41,9 @@ def main():
 
     #2. Load model
     script_cfg = get_config(args.script_cfg)
+    seed = script_cfg["seed"]
+    torch.manual_seed(seed)
+
     GIN_cfg = get_config(args.GIN_cfg)
     SC_cfg = get_config(args.SC_cfg)
     OUT_cfg = get_config(args.OUT_cfg)

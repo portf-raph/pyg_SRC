@@ -67,15 +67,11 @@ class PYGRunner(object):
         # model
         model = self.model
         _eta = self.model.SC._eta
+        _gamma = self.train_cfg["_gamma"]
         LE_temp = self.train_cfg['LE_temp']
-        if self.use_gpu:
-            device = torch.device('cuda')
-            model = nn.DataParallel(model, device_ids=self.gpus).cuda()
-        else:
-            device = torch.device('cpu')
 
         # optimizer
-        params = filter(lambda p: p.requires_grad and p is not self.model.SC.A,
+        params = filter(lambda p: p.requires_grad,
                         self.model.parameters())
         params = list(params)
 
@@ -85,10 +81,6 @@ class PYGRunner(object):
                 'lr': self.train_cfg['lr'],
                 'momentum': self.train_cfg['momentum'],
                 'weight_decay': self.train_cfg['wd']},
-                {'params': self.model.SC.A,
-                'lr': self.train_cfg['lr_A'],
-                'momentum': self.train_cfg['momentum_A'],
-                'weight_decay': self.train_cfg['wd_A']}
             ])
 
         elif self.train_cfg['optimizer'] == 'Adam':
@@ -96,9 +88,6 @@ class PYGRunner(object):
                 {'params': params,
                 'lr': self.train_cfg['lr'],
                 'weight_decay': self.train_cfg['wd']},
-                {'params': self.model.SC.A,
-                'lr': self.train_cfg['lr_A'],
-                'weight_decay': self.train_cfg['wd_A']}
             ])
 
         else:
@@ -114,20 +103,27 @@ class PYGRunner(object):
         optimizer.zero_grad()
         if self.train_cfg['is_resume']:
             load_model(model, self.train_cfg['resume_model'], optimizer=optimizer)   # mod call
+        if self.use_gpu:
+            device = torch.device('cuda')
+            model = nn.DataParallel(model, device_ids=self.gpus).cuda()
+        else:
+            device = torch.device('cpu')
 
         # training loop
         len_dev = len(self.dev_dataset)
         len_dev_loader = len(dev_loader)
         len_train = len(self.train_dataset)
+        len_train_loader = len(train_loader)
 
         iter_count = 0
         best_val_loss = np.inf
+        best_val_acc = 0
         results = defaultdict(list)
         for epoch in range(self.train_cfg['max_epoch']):
             # validation
             if (epoch + 1) % self.train_cfg['valid_epoch'] == 0 or epoch == 0:
                 model.eval()
-                val_loss = 0
+                val_LE_loss = 0
                 avg_A_fidelity = 0
                 avg_A_incoherence = 0
                 correct = 0
@@ -147,36 +143,41 @@ class PYGRunner(object):
                         
                     with torch.no_grad():
                         out, _, _ = model(data_dicts)    # FORWARD
-                        # === GC ===
-                        #gc.collect()
-                        #torch.cuda.empty_cache()
-                        # === GC ===
-                        if hook_trigger:
-                            _r_coeffs_handle.remove()
-                            hook_trigger = False
-                            
-                        val_loss += LELoss(out, y_batch, LE_temp).cpu().item()
-                        pred = (-out).max(dim=1)[1]  # d
+                        val_LE_loss += LELoss(out, y_batch, LE_temp).cpu().item()
+                        pred = out.min(dim=1)[1]  # d
                         correct += pred.eq(y_batch).sum().cpu().item()
+                        
+                    if hook_trigger:
+                        _r_coeffs_handle.remove()
+                        hook_trigger = False
 
-                val_loss = val_loss / len_dev_loader
+                val_LE_loss = val_LE_loss / len_dev_loader
                 val_acc = correct / len_dev
-                print("Avg. Validation CrossEntropy = {}".format(val_loss))     # dbg
+                print("Avg. Validation Loss = {}".format(val_LE_loss))     # dbg
                 print("Avg. Validation Accuracy = {}".format(val_acc))
-                results['val_epoch_loss'] += [val_loss]
+                results['val_epoch_loss'] += [val_LE_loss]
                 results['val_epoch_acc'] += [val_acc]
 
                 # save best model
-                if val_loss < best_val_loss:
-                  best_val_loss = val_loss
-                  snapshot(
-                      model.module if self.use_gpu else model,
-                      optimizer,
-                      self.script_cfg,
-                      epoch + 1,
-                      tag='best')
+                if val_LE_loss < best_val_loss:
+                    best_val_loss = val_LE_loss
+                    snapshot(
+                        model.module if self.use_gpu else model,
+                        optimizer,
+                        self.script_cfg, 
+                        epoch+1,
+                        tag='best')
 
-                self.logger.info("Current Best Validation CrossEntropy = {}".format(best_val_loss))
+                if val_acc > best_val_acc:
+                    best_val_acc = best_val_acc
+                    snapshot(
+                        model.module if self.use_gpu else model,
+                        optimizer,
+                        self.script_cfg,
+                        epoch+1,
+                        tag='best_acc')
+
+                self.logger.info("Current Best Validation Loss = {}".format(best_val_loss))
 
                 # check early stop
                 if early_stop.tick([val_acc]):
@@ -187,11 +188,11 @@ class PYGRunner(object):
                         self.script_cfg,
                         epoch + 1,
                         tag='last')
-
-                    break   # TODO: configure SC.compute_loss
+                    break
 
             # training
             model.train()
+            correct = 0
             avg_A_fidelity = 0
             avg_A_incoherence = 0
             hook_trigger = True
@@ -214,12 +215,16 @@ class PYGRunner(object):
                     _r_coeffs_handle.remove()
                     hook_trigger = False
 
-                A_loss = A_fidelity + _eta * A_incoherence
-                A_loss.backward(retain_graph=True)  # d   # ISSUE 1
-                train_loss = LELoss(out, y_batch, LE_temp)
+                A_loss = A_fidelity #+ _eta * A_incoherence
+                train_LE_loss = LELoss(out, y_batch, LE_temp)
+                train_loss = train_LE_loss + _gamma * LE_temp * A_loss
                 torch.autograd.backward(
                             train_loss,
                             inputs=params)    # ISSUE 2
+
+                pred = (-out).max(dim=1)[1]  # d
+                correct += pred.eq(y_batch).sum().cpu().item()
+                
                 if (iter_count + 1) % self.train_cfg['display_iter'] == 0:
                     GIN_param = next(iter(self.model.GIN.parameters()))
                     # OUT_param = next(iter(self.model.OUT.parameters()))
@@ -228,27 +233,20 @@ class PYGRunner(object):
                     print('\nA grad: {}'.format(torch.mean(torch.abs(A_param.grad))))
                     # print('OUT grad: {}'.format(torch.mean(torch.abs(OUT_param.grad))))
                     print('\n A_fidelity: {}, A_incoherence: {}'.format(A_fidelity, A_incoherence))
-                # === GC ===
-                #gc.collect()
-                #torch.cuda.empty_cache()
-                # === GC ===
+                
                 optimizer.step()
                 avg_A_fidelity += A_fidelity.detach().cpu().item()
                 avg_A_incoherence += A_incoherence.detach().cpu().item()
 
-                # === GC ===
-                # del data_dicts, y_batch, out, A_loss, A_fidelity, A_incoherence
-                # === GC ===
-
-                train_loss = float(train_loss.detach().cpu().numpy())
-                results['train_loss'] += [train_loss]
+                train_LE_loss = float(train_LE_loss.detach().cpu().numpy())
+                results['train_loss'] += [train_LE_loss]
                 results['train_step'] += [iter_count]
 
                 # display loss
                 if (iter_count + 1) % self.train_cfg['display_iter'] == 0:
-                    print("Training CrossEntropy at iteration {}: {}".format(iter_count, train_loss))
+                    print("Training CrossEntropy at iteration {}: {}".format(iter_count, train_LE_loss))
                     self.logger.info("Loss @ epoch {:04d} iteration {:08d} = {}".format(
-                        epoch + 1, iter_count + 1, train_loss))
+                        epoch + 1, iter_count + 1, train_LE_loss))
 
                 iter_count += 1
 
@@ -257,8 +255,10 @@ class PYGRunner(object):
                 snapshot(model.module
                          if self.use_gpu else model, optimizer, self.script_cfg, epoch + 1)
              
-            avg_A_fidelity = avg_A_fidelity / len_train
-            avg_A_incoherence = avg_A_incoherence / len_train
+            avg_A_fidelity = avg_A_fidelity / len_train_loader
+            avg_A_incoherence = avg_A_incoherence / len_train_loader
+            train_acc = correct / len_train
+            print("Train accuracy at epoch {}: {}".format(epoch, train_acc))
             results['train_A_fidelity'] += [avg_A_fidelity]
             results['train_A_incoherence'] += [avg_A_incoherence]
             lr_scheduler.step()
@@ -288,17 +288,19 @@ class PYGRunner(object):
         model.eval()
         test_loss = []
 
+        correct = 0
+        len_test = len(self.test_dataset)
         for data_dicts in tqdm(test_loader):
             if self.use_gpu:
                 data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                 else v for k, v in d.items()} for d in data_dicts]
             y_batch = torch.tensor([d["y"].item() for d in data_dicts], dtype=torch.long, device=device)  # d
             with torch.no_grad():
-                out = model(data_dicts)
-                curr_loss = LELoss(out, y_batch, self.traom_cfg['LE_temp']).cpu().numpy()
-                test_loss += [curr_loss]
+                out, A_fidelity, A_incoherence = model(data_dicts)
+                pred = out.min(dim=1)[1]  # d
+                correct += pred.eq(y_batch).sum().cpu().item()
 
-        test_loss = float(np.mean(np.concatenate(test_loss)))
-        self.logger.info("Test MSE = {}".format(test_loss))
+        test_acc = correct / len_test
+        print("Test accuracy: {}".format(test_acc))
 
         return test_loss
