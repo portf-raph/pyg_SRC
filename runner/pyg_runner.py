@@ -4,6 +4,7 @@ import numpy as np
 import pickle
 import datetime
 from collections import defaultdict
+from scipy.stats import truncnorm
 from tqdm import tqdm
 
 import torch
@@ -16,6 +17,7 @@ from torch.utils.data import DataLoader
 from logging import Logger
 
 from utils.train_helper import *
+from utils.data_helper import atol_eigs
 from utils.hooks import build_r_coeffs_hook
 
 
@@ -63,6 +65,12 @@ class PYGRunner(object):
                                 pin_memory=True if self.use_gpu else False,
                                 collate_fn=collate_fn
                                 )
+        test_loader = DataLoader(dataset=self.test_dataset,
+                                 batch_size=self.train_cfg['batch_size'],
+                                 num_workers=self.train_cfg['num_workers'],
+                                 pin_memory=True if self.use_gpu else False,
+                                 collate_fn=collate_fn
+                                 )
 
         # model
         model = self.model
@@ -115,17 +123,27 @@ class PYGRunner(object):
         len_train = len(self.train_dataset)
         len_train_loader = len(train_loader)
 
+        len_test = len(self.test_dataset)
+        len_test_loader = len(test_loader)
+
         iter_count = 0
         best_val_loss = np.inf
         best_val_acc = 0
         results = defaultdict(list)
+
+        # scale sampling
+        mu = 0
+        sigma = np.sqrt(0.01)
+        a,b = 0, np.inf
+
+        a_norm = (a - mu)/sigma
+        b_norm = (b - mu)/sigma
+
         for epoch in range(self.train_cfg['max_epoch']):
             # validation
             if (epoch + 1) % self.train_cfg['valid_epoch'] == 0 or epoch == 0:
                 model.eval()
                 val_LE_loss = 0
-                avg_A_fidelity = 0
-                avg_A_incoherence = 0
                 correct = 0
                 hook_trigger = True
                 
@@ -168,16 +186,14 @@ class PYGRunner(object):
                         epoch+1,
                         tag='best')
 
-                if val_acc > best_val_acc:
-                    best_val_acc = best_val_acc
+                if val_acc > best_val_acc and epoch > 40:
+                    best_val_acc = val_acc
                     snapshot(
                         model.module if self.use_gpu else model,
                         optimizer,
                         self.script_cfg,
                         epoch+1,
                         tag='best_acc')
-
-                self.logger.info("Current Best Validation Loss = {}".format(best_val_loss))
 
                 # check early stop
                 if early_stop.tick([val_acc]):
@@ -190,11 +206,46 @@ class PYGRunner(object):
                         tag='last')
                     break
 
+
+                test_LE_loss = 0
+                correct = 0
+                hook_trigger = True
+
+                for data_dicts in tqdm(test_loader):
+                    # print(f"Reserved: {torch.cuda.memory_reserved()/1e9} GB")
+                    if self.use_gpu:
+                        data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
+                        else v for k, v in d.items()} for d in data_dicts]
+                    y_batch = torch.tensor([d["y"].item() for d in data_dicts], dtype=torch.long, device=device) #d
+
+                    if hook_trigger:
+                        _, _r_coeffs_hook = build_r_coeffs_hook(y_batch=y_batch,
+                                                                partition=self.model.SC.partition)
+                        _r_coeffs_handle = self.model.SC.register_forward_hook(_r_coeffs_hook)
+                        
+                    with torch.no_grad():
+                        out, _, _ = model(data_dicts)    # FORWARD
+                        test_LE_loss += LELoss(out, y_batch, LE_temp).cpu().item()
+                        pred = out.min(dim=1)[1]  # d
+                        correct += pred.eq(y_batch).sum().cpu().item()
+                        
+                    if hook_trigger:
+                        _r_coeffs_handle.remove()
+                        hook_trigger = False
+
+                test_LE_loss = test_LE_loss / len_test_loader
+                test_acc = correct / len_dev
+                print("Avg. Test Loss = {}".format(test_LE_loss))     # dbg
+                print("Avg. Test Accuracy = {}".format(test_acc))
+                results['test_epoch_loss'] += [test_LE_loss]
+                results['test_epoch_acc'] += [test_acc]
+
             # training
             model.train()
             correct = 0
             avg_A_fidelity = 0
             avg_A_incoherence = 0
+            train_epoch_loss = 0
             hook_trigger = True
             for data_dicts in tqdm(train_loader):
                 # print(torch.cuda.memory_allocated(device)/torch.cuda.max_memory_allocated(device))
@@ -203,26 +254,38 @@ class PYGRunner(object):
                 if self.use_gpu:
                     data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                     else v for k, v in d.items()} for d in data_dicts]
+
+                # heat scaling
+                for data_dict in data_dicts:
+                    t = truncnorm.rvs(a=a_norm, b=b_norm, loc=mu, scale=sigma, size=1).item()
+                    lap_eigs = atol_eigs(data_dict["eigs"], data_dict["edge_index"])
+                    V = data_dict["V"]
+                    kernel = V @ torch.mul(torch.exp(-t * lap_eigs), V.T)
+                    # data_dict["x"] = kernel @ data_dict["x"]
+
                 y_batch = torch.tensor([d["y"].item() for d in data_dicts], dtype=torch.long, device=device) # d
 
                 if hook_trigger:
                     _, _r_coeffs_hook = build_r_coeffs_hook(y_batch=y_batch,
                                                             partition=self.model.SC.partition)
                     _r_coeffs_handle = self.model.SC.register_forward_hook(_r_coeffs_hook)
-                out, A_fidelity, A_incoherence = model(data_dicts) # FORWARD
+                out, out_A, A_incoherence = model(data_dicts) # FORWARD
 
                 if hook_trigger:
                     _r_coeffs_handle.remove()
                     hook_trigger = False
 
-                A_loss = A_fidelity #+ _eta * A_incoherence
+                A_fidelity = torch.mean(
+                            out_A[torch.arange(out_A.size(0)), y_batch]
+                        )
+                A_loss = A_fidelity + _eta * A_incoherence
                 train_LE_loss = LELoss(out, y_batch, LE_temp)
-                train_loss = train_LE_loss + _gamma * LE_temp * A_loss
+                train_loss = train_LE_loss + _gamma * LE_temp * A_loss     #TODO: RECONSTRUCTION FIDELITY.
                 torch.autograd.backward(
                             train_loss,
                             inputs=params)    # ISSUE 2
 
-                pred = (-out).max(dim=1)[1]  # d
+                pred = out.min(dim=1)[1]  # d
                 correct += pred.eq(y_batch).sum().cpu().item()
                 
                 if (iter_count + 1) % self.train_cfg['display_iter'] == 0:
@@ -239,6 +302,7 @@ class PYGRunner(object):
                 avg_A_incoherence += A_incoherence.detach().cpu().item()
 
                 train_LE_loss = float(train_LE_loss.detach().cpu().numpy())
+                train_epoch_loss += train_LE_loss
                 results['train_loss'] += [train_LE_loss]
                 results['train_step'] += [iter_count]
 
@@ -250,17 +314,31 @@ class PYGRunner(object):
 
                 iter_count += 1
 
-            if (epoch + 1) % self.train_cfg['snapshot_epoch'] == 0:
+            if (epoch + 1) in self.train_cfg['snapshot_epoch']:
                 self.logger.info("Saving Snapshot @ epoch {:04d}".format(epoch + 1))
                 snapshot(model.module
                          if self.use_gpu else model, optimizer, self.script_cfg, epoch + 1)
+
+            if (epoch + 1) in self.train_cfg['LE_steps'] == 0:
+                LE_temp = 1.0 * LE_temp
+                _gamma = 2.0 * _gamma
+
+            if (epoch + 1) == self.train_cfg['max_epoch']:
+                snapshot(
+                    model.module if self.use_gpu else model,
+                    optimizer,
+                    self.script_cfg,
+                    epoch+1,
+                    tag='last')
              
             avg_A_fidelity = avg_A_fidelity / len_train_loader
             avg_A_incoherence = avg_A_incoherence / len_train_loader
+            train_epoch_loss = train_epoch_loss / len_train_loader
             train_acc = correct / len_train
             print("Train accuracy at epoch {}: {}".format(epoch, train_acc))
             results['train_A_fidelity'] += [avg_A_fidelity]
             results['train_A_incoherence'] += [avg_A_incoherence]
+            results['train_epoch_loss'] += [train_epoch_loss]
             lr_scheduler.step()
             
         results['best_val_loss'] += [best_val_loss]
@@ -295,6 +373,7 @@ class PYGRunner(object):
                 data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
                 else v for k, v in d.items()} for d in data_dicts]
             y_batch = torch.tensor([d["y"].item() for d in data_dicts], dtype=torch.long, device=device)  # d
+
             with torch.no_grad():
                 out, A_fidelity, A_incoherence = model(data_dicts)
                 pred = out.min(dim=1)[1]  # d

@@ -32,6 +32,25 @@ def get_dict(A: Tensor,   # K x CM
     return D    # TODO: bottleneck, but parallelizing is too much of a hassle
 
 
+def get_dict_diag(A,
+                  V,
+                  eigs,
+                  K: int,
+                  in_channels: int,
+                  num_classes: int,
+                  ):
+    G_k = torch.stack([torch.pow(eigs, k) for k in range(K)]).T
+    D = G_k @ A
+    D = V @ D
+
+    D_classes = D.split(D.shape[-1] // num_classes, dim=-1)
+    D_classes = [D.split(D.shape[-1] // in_channels, dim=-1) for D in D_classes]
+    D_classes = [torch.block_diag(*D) for D in D_classes]
+    D = torch.cat(D_classes, dim=-1)
+
+    return D
+
+
 def scode_obj_bmm(params: TupleOfTensors,
                   _f_stack: TupleOfTensors,
                   _D_stack: Tensor,
@@ -152,6 +171,30 @@ def build_f_mend_alt(in_channels: int):
         return _f_stack
 
     return _f_mend_alt
+
+
+def build_f_mend_repeat(
+        num_classes: int,
+        in_channels: int):
+
+    def _f_mend_repeat(_f_stack: TupleOfTensors,
+                       batch_size: int):
+
+        _f_stack = [torch.cat(
+                _f_stack[i*in_channels:(i+1)*in_channels]
+            ).unsqueeze(-1) for i in range(batch_size)
+          ]
+        _f_stack = torch.stack(
+                pad_columns(_f_stack)
+            ).squeeze()
+        
+        B = _f_stack.shape[0]
+        N = _f_stack.shape[1]
+        _f_stack = _f_stack.unsqueeze(0).expand(num_classes, -1, -1).reshape(num_classes * B, N)
+
+        return _f_stack
+
+    return _f_mend_repeat
 
 
 def pad_columns(tensors):

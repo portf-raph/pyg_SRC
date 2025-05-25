@@ -23,7 +23,7 @@ class LeastEnergy(torch.nn.Module):
         B = _D_batch.shape[0]
         N = _D_batch.shape[1]
         M = _D_batch.shape[2]  # self.num_atoms
-        
+
         start_batch = [self.partition[i] for i in range(self.num_classes)]
         end_batch = [self.partition[i+1] for i in range(self.num_classes)]
         
@@ -43,5 +43,9 @@ class LeastEnergy(torch.nn.Module):
             torch.square(_f_batch - torch.bmm(sub_D_batch, _r_batch).squeeze()), dim=1
         )
         fid_batch = torch.stack(torch.split(fid_batch.squeeze(), B)).T
+        fid_batch_A = torch.sum(
+            torch.square(_f_batch.detach() - torch.bmm(sub_D_batch, _r_batch).squeeze()), dim=1
+        )
+        fid_batch_A = torch.stack(torch.split(fid_batch_A.squeeze(), B)).T
         
-        return fid_batch
+        return fid_batch, fid_batch_A

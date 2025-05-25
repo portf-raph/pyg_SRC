@@ -34,9 +34,12 @@ class SparseCoder(torch.nn.Module):
 
         self.split_factor = split_factor
         self._f_split = build_f_split(split_factor=split_factor)
+        self._f_mend_repeat = build_f_mend_repeat(
+                num_classes=num_classes,
+                in_channels=in_channels)  # d
         self._f_mend_alt = build_f_mend_alt(in_channels=in_channels)
 
-        self.A = Parameter(torch.randn(self.K, self.in_channels*self.num_atoms, device=device))  # TODO: A init
+        self.A = Parameter(torch.randn(self.K, self.num_atoms, device=device) * 0.01)  # TODO: A init
 
         # Selection operators
         assert self.partition[0] == 0
@@ -48,34 +51,42 @@ class SparseCoder(torch.nn.Module):
                 data_dicts: list[dict]):
         A_incoherence = 0
 
-        _D_batch = [get_dict(A=self.A,
-                             K=self.K,
-                             in_channels=self.in_channels,
-                             V=data_dict['V'],
-                             eigs=atol_eigs(data_dict['eigs'], data_dict['edge_index']) if self.laplacian_eigs else data_dict['eigs'])
-                             for data_dict in data_dicts]
+        _D_batch = [get_dict_diag(A=self.A,
+                                  K=self.K,
+                                  in_channels=self.in_channels,
+                                  V=data_dict['V'],
+                                  num_classes=self.num_classes,
+                                  eigs=atol_eigs(data_dict['eigs'], data_dict['edge_index']) if self.laplacian_eigs else data_dict['eigs'])
+                                  for data_dict in data_dicts]
+        print(_D_batch[0])
         _D_batch = torch.stack(
                 pad_columns(_D_batch)
-              )
+                )
+        _D_batch_0 = torch.cat(
+                    torch.split(_D_batch, self.partition[1], dim=-1),dim=0
+                )   # d; 0 denotes split
+
         y_batch = [data_dict['y'].item() for data_dict in data_dicts]
         start_batch = [self.partition[y] for y in y_batch]
         end_batch = [self.partition[y+1] for y in y_batch]
+        batch_size = len(y_batch)
         
         _f_stack = [data_dict['x'] for data_dict in data_dicts]
         _f_stack = self._f_split(_f_stack)    # SPLIT
-        _r_batch = FISTA_bmm(None,
+        _r_batch_0 = FISTA_bmm(None,
                              _f_stack=_f_stack,
-                             _D_stack=_D_batch,
+                             _D_stack=_D_batch_0,  # d
                              _lambda=self._lambda,
-                             _f_mend=self._f_mend_alt,
+                             _f_mend=self._f_mend_repeat,
                              )
-        _r_batch = torch.stack(_r_batch)
+        _r_batch_0 = torch.stack(_r_batch_0)
         _f_batch = self._f_mend_alt(_f_stack,
-                                    _D_batch.shape[0])
-        
+                                    batch_size)
+
         if self.training:
+
             # === Incoherence ===
-            _D_norm = F.normalize(_D_batch.detach(), p=2, dim=1, eps=1e-12)
+            _D_norm = F.normalize(_D_batch, p=2, dim=1, eps=1e-12)
             _D_norm = torch.unbind(_D_norm)
             _D_label_batch = torch.stack(
                 [_D_norm[i][:, start:end] for i, (start, end) in enumerate(zip(start_batch, end_batch))]
@@ -87,4 +98,4 @@ class SparseCoder(torch.nn.Module):
             A_incoherence = (1/len(data_dicts)) * torch.sum(torch.square(torch.bmm(_D_label_batch.transpose(-1,-2), _D_rest_batch)))
             # === ////////// ===
 
-        return _r_batch.detach(), A_incoherence, _D_batch, _f_batch
+        return _r_batch_0.detach(), A_incoherence, _D_batch_0, _f_batch      # d

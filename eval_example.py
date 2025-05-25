@@ -31,6 +31,7 @@ model_class = "LeastEnergy"
 
 model = SRCNet(GIN_cfg=GIN_cfg,
                SC_cfg=SC_cfg,
+               LE_cfg=None,
                OUT_cfg=OUT_cfg,
                model_class=model_class,
                device=device)
@@ -43,9 +44,9 @@ for data_dicts in data_loader:
 
     data_dicts = [{k: v.to(device) if isinstance(v, torch.Tensor)
         else v for k, v in d.items()} for d in data_dicts]
-    out, A_fidelity, A_incoherence = model(data_dicts)
-    out = torch.softmax(out, dim=1)
-    print(out, A_fidelity, A_incoherence)
+    out, out_A, A_incoherence = model(data_dicts)
+    out = torch.softmax(-out, dim=1)
+    print(out, out_A, A_incoherence)
     iter += 1
     if iter == 10:
         break
@@ -63,6 +64,15 @@ with open(os.path.join(save_dir, 'train_stats.p'), 'rb') as handle:
 plt.figure()
 plt.plot(results['train_step'], results['train_loss'], '-b', label='Perte')
 plt.xlabel("Nombre d'itérations")
+plt.ylabel("Perte d'entropie croisée")
+plt.title('Perte de classification')
+plt.savefig(os.path.join(save_dir, "Perte de classification"+".png"))
+plt.show()
+plt.close()
+
+plt.figure()
+plt.plot(results['train_epoch_loss'], '-b', label='Perte')
+plt.xlabel("Nombre d'époques")
 plt.ylabel("Perte d'entropie croisée")
 plt.title('Perte de classification')
 plt.savefig(os.path.join(save_dir, "Perte de classification"+".png"))
@@ -96,4 +106,20 @@ plt.savefig(os.path.join(save_dir, "Validation"+".png"))
 plt.show()
 plt.close()
 
+plt.figure()
+plt.plot(5*np.arange(1, len(results['val_epoch_loss'])+1), results['val_epoch_loss'], '-g', label="Perte d'entropie croisée")
+plt.xlabel("Nombre d'epoques")
+plt.ylabel("% de succès en classification")
+plt.title("Perte de validation")
+plt.savefig(os.path.join(save_dir, "Validation perte"+".png"))
+plt.show()
+plt.close()
 
+plt.figure()
+plt.plot(5*np.arange(1, len(results['test_epoch_acc'])+1), results['test_epoch_acc'], '-g', label="Exactitude de test d'epoche")
+plt.xlabel("Nombre d'epoques")
+plt.ylabel("% de succès en classification")
+plt.title("Test")
+plt.savefig(os.path.join(save_dir, "Test"+".png"))
+plt.show()
+plt.close()

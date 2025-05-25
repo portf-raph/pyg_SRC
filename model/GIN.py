@@ -22,9 +22,9 @@ class GIN_Processor(torch.nn.Module):
             if layer == 0:
                 local_in_channels = in_channels
             else:
-                local_in_channels = MLP_cfg['hid_dim']    # TODO: validate
+                local_in_channels = MLP_cfg['out_dim']    # TODO: validate
             MLP_ = MLP(in_dim=local_in_channels,
-                      out_dim=MLP_cfg['hid_dim'],
+                      out_dim=MLP_cfg['out_dim'],
                       hid_dim=MLP_cfg['hid_dim'],
                       num_hid=MLP_cfg['num_hid'],
                       dp_cfg=MLP_cfg['dp_cfg'],

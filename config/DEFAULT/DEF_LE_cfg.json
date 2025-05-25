@@ -1,5 +1,5 @@
 {
-    "num_atoms": 60,
+    "num_atoms": 96,
     "num_classes": 2,
-    "partition": [0,30,60]
+    "partition": [0,48,96]
 }
