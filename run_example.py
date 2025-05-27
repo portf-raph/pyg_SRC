@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--script_cfg', type=str, default='./config/DEFAULT/DEF_config.json')
     parser.add_argument('--GIN_cfg', type=str, default='./config/DEFAULT/DEF_GIN_cfg.json')
     parser.add_argument('--SC_cfg', type=str, default='./config/DEFAULT/DEF_SC_cfg.json')
+    parser.add_argument('--LE_cfg', type=str, default='./config/DEFAULT/DEF_LE_cfg.json')
     parser.add_argument('--OUT_cfg', type=str, default='./config/DEFAULT/DEF_LE_cfg.json')
     parser.add_argument('--model_class', type=str, default='LeastEnergy')
     parser.add_argument('--dataset_load_dir', type=str, default='./data/PROTEINS/pth/')
@@ -41,13 +42,18 @@ def main():
 
     #2. Load model
     script_cfg = get_config(args.script_cfg)
+    seed = script_cfg["seed"]
+    torch.manual_seed(seed)
+
     GIN_cfg = get_config(args.GIN_cfg)
     SC_cfg = get_config(args.SC_cfg)
+    LE_cfg = get_config(args.LE_cfg)
     OUT_cfg = get_config(args.OUT_cfg)
 
     model = SRCNet(
         GIN_cfg=GIN_cfg,
         SC_cfg=SC_cfg,
+        LE_cfg=LE_cfg,
         OUT_cfg=OUT_cfg,
         model_class=args.model_class,
         device=device
@@ -58,6 +64,7 @@ def main():
     #3. Dataset
     train_dataset = PthDataset(load_dir=os.path.join(args.dataset_load_dir, 'train'))
     dev_dataset = PthDataset(load_dir=os.path.join(args.dataset_load_dir, 'val'))
+    test_dataset = PthDataset(load_dir=os.path.join(args.dataset_load_dir, 'test'))
 
     # 4. logger
     log_file = '../exp/pyg_SRC/log_{}.txt'.format(datetime.datetime.now())
@@ -77,7 +84,7 @@ def main():
     script_cfg["use_gpu"] = script_cfg["use_gpu"] and torch.cuda.is_available()
     
     runner = PYGRunner(model_object=model, script_cfg=script_cfg, logger=logger,
-                       train_dataset=train_dataset, dev_dataset=dev_dataset)
+                       train_dataset=train_dataset, dev_dataset=dev_dataset, test_dataset=test_dataset)     # R
     runner.train()    
 
 

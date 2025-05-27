@@ -30,7 +30,7 @@ def FISTA_bmm(
 ) -> TupleOfTensors:
 
     _f_stack = _f_mend(_f_stack=_f_stack,
-                       batch_size=_D_stack.shape[0]).unsqueeze(1).contiguous()
+                      batch_size=len(_f_stack) // 12).unsqueeze(1).contiguous()
 
     W = torch.linalg.norm(_D_stack, ord=2, dim=1)
     _D = _D_stack / W.unsqueeze(1)   # UNIT

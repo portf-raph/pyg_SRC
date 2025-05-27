@@ -40,9 +40,12 @@ def dump_eigs_data(
     test_set = dataset[indices[train_size:]]
 
     indices = torch.randperm(len(train_set)).tolist()
-    sub_train_size = int(0.9*len(train_set))
+    sub_train_size = int(0.8889*len(train_set))
     train_subset = train_set[indices[:sub_train_size]]
     val_set = train_set[indices[sub_train_size:]]
+    print("Length train: {}".format(len(train_subset)))
+    print("Length val: {}".format(len(val_set)))
+    print("Length test: {}".format(len(val_set)))
 
     for split in [train_subset, val_set, test_set]:
         split_tag = 'train' if split == train_subset else 'val' if split == val_set else 'test'

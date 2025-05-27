@@ -12,7 +12,7 @@ class LeastEnergy(torch.nn.Module):
         self.partition = partition
         assert self.partition[0] == 0
         assert self.partition[-1] == num_atoms
-        assert self.num_classes + 2 == len(self.partition)
+        assert self.num_classes + 1 == len(self.partition)
         self.Q = torch.eye(num_atoms, device=device)
         
     def forward(self,
@@ -23,12 +23,11 @@ class LeastEnergy(torch.nn.Module):
         B = _D_batch.shape[0]
         N = _D_batch.shape[1]
         M = _D_batch.shape[2]  # self.num_atoms
-        
+
         start_batch = [self.partition[i] for i in range(self.num_classes)]
         end_batch = [self.partition[i+1] for i in range(self.num_classes)]
         
-        sub_Q_batch = [torch.cat((self.Q[:, start:end], 
-                                  self.Q[:, self.partition[-2]:self.partition[-1]]), dim=1) for start, end in zip(start_batch, end_batch)]
+        sub_Q_batch = [self.Q[:, start:end] for start, end in zip(start_batch, end_batch)]
         Q_prod_batch = [sub_Q @ sub_Q.T for sub_Q in sub_Q_batch]
         Q_prod_batch = torch.cat(
             [Q_prod.unsqueeze(0).expand(B, -1, -1) for Q_prod in Q_prod_batch], dim=0
@@ -44,5 +43,9 @@ class LeastEnergy(torch.nn.Module):
             torch.square(_f_batch - torch.bmm(sub_D_batch, _r_batch).squeeze()), dim=1
         )
         fid_batch = torch.stack(torch.split(fid_batch.squeeze(), B)).T
+        fid_batch_A = torch.sum(
+            torch.square(_f_batch.detach() - torch.bmm(sub_D_batch, _r_batch).squeeze()), dim=1
+        )
+        fid_batch_A = torch.stack(torch.split(fid_batch_A.squeeze(), B)).T
         
-        return -fid_batch
+        return fid_batch, fid_batch_A

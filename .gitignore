@@ -1,2 +1,6 @@
 **/__pycache__/
+<<<<<<< HEAD
 **/PROTEINS/
+=======
+**/data/PROTEINS/
+>>>>>>> least_energy
