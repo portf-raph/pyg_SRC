@@ -127,9 +127,6 @@ class PYGRunner(object):
         len_train = len(self.train_dataset)
         len_train_loader = len(train_loader)
 
-        len_test = len(self.test_dataset)
-        len_test_loader = len(test_loader)
-
         iter_count = 0
         best_val_loss = np.inf
         best_val_acc = 0
